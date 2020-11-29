@@ -4,7 +4,7 @@ use std::str::FromStr;
 use std::fs::File;
 use simple_logger::SimpleLogger;
 use std::io::{copy};
-use serde::Deserialize;
+use serde::{Serialize,Deserialize};
 use std::fmt::Display;
 use serde::export::Formatter;
 use std::ops::Add;
@@ -33,7 +33,10 @@ impl Client {
     ///
     async fn start_job(&self) -> reqwest::Result<()> {
         self.client.post(self.run_config.url.join(AUFTRAG_ENPOINT).unwrap())
-            .json(&self.run_config.rounds)
+            .json(&self.run_config.rounds.iter()
+                .map(|number_of_images_per_round| {
+                    SendableConfig{runde: Runde{anzahl: *number_of_images_per_round}}
+                }).collect::<Vec<SendableConfig>>())
             .send().await?
             .error_for_status().map(|_| ())
     }
@@ -144,6 +147,16 @@ impl IncomingStatus {
             Status::InProgress(Progress { round_now: self.runde, round_max, image_now: self.aufnahme, image_max })
         }
     }
+}
+
+#[derive(Serialize)]
+struct Runde {
+    anzahl: i32
+}
+
+#[derive(Serialize)]
+struct SendableConfig {
+    runde: Runde
 }
 
 #[derive(Debug)]
