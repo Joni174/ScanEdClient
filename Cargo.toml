@@ -1,0 +1,16 @@
+[package]
+name = "scan3d_client"
+version = "0.1.0"
+authors = ["jonas <jonas.gastecker@sz-ybbs.ac.at>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tokio = { version = "0.2", features = ["full"] }
+reqwest = { version = "0.10.9", features = ["json"]}
+serde = {version= "1.0.117", features=["derive"]}
+clap = "2"
+log = "0.4.11"
+simple_logger = "1.11.0"
+# ansi_term = "0.12.1"
