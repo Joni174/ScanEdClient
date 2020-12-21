@@ -13,6 +13,7 @@ use std::net::SocketAddr;
 // use actix_web::web::Buf;
 // use std::collections::HashSet;
 use crate::web_interface::app_state::AppState;
+use tokio::sync::Mutex;
 //
 // #[derive(Debug, PartialEq)]
 // enum AppState {
@@ -145,17 +146,53 @@ use crate::web_interface::app_state::AppState;
 //     Ok(actix_files::NamedFile::open("html/index.html")?)
 // }
 //
-#[get("/test")]
-async fn test () -> impl Responder {
-    let app_state = web_interface::app_state::Start{};
-    web_interface::app_state::Start::status()
+// #[get("/test")]
+// async fn test () -> impl Responder {
+//     let app_state = web_interface::app_state::Start{};
+//     web_interface::app_state::Start::status()
+// }
+
+mod endpoints {
+    use actix_web::{Responder, web, get, post, HttpResponse};
+    use crate::AppData;
+    use crate::web_interface::model::Auftrag;
+
+    #[get("/")]
+    async fn index(data: web::Data<AppData>) -> impl Responder {
+        let app_state = data.app_state.lock().await;
+        app_state.as_ref().unwrap().index()
+    }
+
+    #[get("/status")]
+    async fn status(data: web::Data<AppData>) -> impl Responder {
+        let app_state = data.app_state.lock().await;
+        app_state.as_ref().unwrap().status()
+    }
+
+    #[post("/auftrag")]
+    async fn post_auftrag(auftrag: web::Json<Auftrag>, data: web::Data<AppData>) ->impl Responder {
+        let mut app_state = data.app_state.lock().await;
+        let (new_app_state, res) = app_state.take().unwrap().post_auftrag(auftrag.0);
+        *app_state = Some(new_app_state);
+        res
+    }
+
+    #[get("/resulting_content")]
+    async fn get_resulting_content(data: web::Data<AppData>) ->impl Responder {
+        let mut app_state = data.app_state.lock().await;
+        app_state.take().unwrap().get_resulting_content()
+    }
+}
+
+struct AppData {
+    app_state: Mutex<Option<Box<dyn AppState>>>
 }
 
 #[actix_web::main]
 async fn main() {
     HttpServer::new(|| {
         App::new()
-            .service(test)
+            // .service(test)
             // .service(post_configuration)
             // .service(get_status)
             // .service(index_file)
