@@ -2,19 +2,28 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
 pub struct Auftrag {
-    runde1: i32,
-    runde2: i32,
-    runde3: i32,
-    url: String
+    input_runde1: String,
+    input_runde2: String,
+    input_runde3: String,
+    input_hostname: String
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "type")]
+pub enum PageForm {
+    Auftrag(Auftrag),
+    None
 }
 
 impl Auftrag {
     pub fn into_vec(self) -> Vec<i32> {
-        vec![self.runde1, self.runde2, self.runde3]
+        vec![self.input_runde1.parse::<i32>().unwrap(),
+             self.input_runde2.parse::<i32>().unwrap(),
+             self.input_runde3.parse::<i32>().unwrap()]
     }
 
     pub fn get_url(&self) -> &String {
-        &self.url
+        &self.input_hostname
     }
 }
 

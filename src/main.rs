@@ -4,7 +4,7 @@ mod web_interface;
 //
 use std::str::FromStr;
 // use std::ops::{Deref, DerefMut};
-use actix_web::{HttpServer, App, get, post, delete, web, Responder, HttpResponse};
+use actix_web::{HttpServer, App};
 use std::net::SocketAddr;
 // use crate::AppState::{Start, ImageTaking};
 // use tokio::sync::Mutex;
@@ -14,6 +14,7 @@ use std::net::SocketAddr;
 // use std::collections::HashSet;
 use crate::web_interface::app_state::AppState;
 use tokio::sync::Mutex;
+use crate::web_interface::app_state;
 //
 // #[derive(Debug, PartialEq)]
 // enum AppState {
@@ -153,32 +154,33 @@ use tokio::sync::Mutex;
 // }
 
 mod endpoints {
-    use actix_web::{Responder, web, get, post, HttpResponse};
+    use actix_web::{Responder, web, get, post};
     use crate::AppData;
-    use crate::web_interface::model::Auftrag;
+    use crate::web_interface::model::{PageForm};
 
     #[get("/")]
-    async fn index(data: web::Data<AppData>) -> impl Responder {
+    pub(crate) async fn index(data: web::Data<AppData>) -> impl Responder {
         let app_state = data.app_state.lock().await;
         app_state.as_ref().unwrap().index()
     }
 
     #[get("/status")]
-    async fn status(data: web::Data<AppData>) -> impl Responder {
+    pub(crate) async fn status(data: web::Data<AppData>) -> impl Responder {
         let app_state = data.app_state.lock().await;
         app_state.as_ref().unwrap().status()
     }
 
-    #[post("/auftrag")]
-    async fn post_auftrag(auftrag: web::Json<Auftrag>, data: web::Data<AppData>) ->impl Responder {
+    #[post("/page_form")]
+    pub(crate) async fn post_page_form(page_form: web::Form<PageForm>, data: web::Data<AppData>) ->impl Responder {
         let mut app_state = data.app_state.lock().await;
-        let (new_app_state, res) = app_state.take().unwrap().post_auftrag(auftrag.0);
+        let (new_app_state, res) = app_state.take().unwrap()
+            .post_page_form(page_form.0);
         *app_state = Some(new_app_state);
         res
     }
 
-    #[get("/resulting_content")]
-    async fn get_resulting_content(data: web::Data<AppData>) ->impl Responder {
+    #[get("/media_content")]
+    pub(crate) async fn get_media_content(data: web::Data<AppData>) ->impl Responder {
         let mut app_state = data.app_state.lock().await;
         app_state.take().unwrap().get_resulting_content()
     }
@@ -192,12 +194,16 @@ struct AppData {
 async fn main() {
     HttpServer::new(|| {
         App::new()
+            .service(endpoints::index)
+            .service(endpoints::status)
+            .service(endpoints::post_page_form)
+            .service(endpoints::get_media_content)
             // .service(test)
             // .service(post_configuration)
             // .service(get_status)
             // .service(index_file)
             // .service(actix_files::Files::new("/", "html"))
-            // .data(AppState::Start)
+            .data(AppData{ app_state: Mutex::new(Some(Box::new(app_state::Start{})))})
     }).bind(SocketAddr::from_str("0.0.0.0:8080").unwrap())
         .unwrap()
         .run().await.unwrap();
