@@ -1,18 +1,19 @@
 use serde::{Deserialize, Serialize};
+use crate::server_com::Status;
 
 #[derive(Deserialize)]
 pub struct Auftrag {
     input_runde1: String,
     input_runde2: String,
     input_runde3: String,
-    input_hostname: String
+    input_hostname: String,
 }
 
 #[derive(Deserialize)]
 #[serde(tag = "type")]
 pub enum PageForm {
     Auftrag(Auftrag),
-    None
+    None,
 }
 
 impl Auftrag {
@@ -29,7 +30,99 @@ impl Auftrag {
 
 #[derive(Serialize, Clone)]
 pub enum ImageTakingStatus {
-    Indifferent,
-    ImageReady,
-    ProcessFinished
+    Start,
+    TakingImages(Status),
+    Finished,
+}
+
+pub mod ws {
+    use actix::{Actor, Message, StreamHandler, AsyncContext, Context, Addr, ActorContext, Handler, WrapFuture};
+    use actix_web_actors::ws;
+    use serde_json::json;
+    use serde::Serialize;
+    use crossbeam_channel::Receiver;
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Message, Clone)]
+    #[rtype(result = "()")]
+    struct Msg(String);
+
+    pub struct MyWs {
+        notifier: Arc<Mutex<Notifier>>
+    }
+
+    impl MyWs {
+        pub(crate) fn new(notifier: Arc<Mutex<Notifier>>) -> Self {
+            MyWs { notifier }
+        }
+    }
+
+    impl Actor for MyWs {
+        type Context = ws::WebsocketContext<Self>;
+    }
+
+    /// Handler for ws::Message message
+    impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWs {
+        fn handle(
+            &mut self,
+            msg: Result<ws::Message, ws::ProtocolError>,
+            _ctx: &mut Self::Context,
+        ) {
+            match msg {
+                Ok(ws::Message::Ping(msg)) => {
+                    println!("ping: {:?}", &msg);
+                }
+                Ok(ws::Message::Text(text)) => {
+                    println!("text: {:?}", text);
+                }
+                Ok(ws::Message::Binary(bin)) => {
+                    println!("binary: {:?}", bin);
+                }
+                _ => (),
+            }
+        }
+        fn started(&mut self, ctx: &mut Self::Context) {
+            let mut notifier = self.notifier.lock().unwrap();
+            notifier.addr = Some(ctx.address())
+        }
+    }
+
+    impl Handler<Notification> for MyWs {
+        type Result = ();
+
+        fn handle(&mut self, msg: Notification, ctx: &mut Self::Context) -> Self::Result {
+            ctx.text(msg.0)
+        }
+    }
+
+    #[derive(Message)]
+    #[rtype(result = "()")]
+    pub struct Notification(pub String);
+
+    #[derive(Clone)]
+    pub struct Notifier {
+        addr: Option<Addr<MyWs>>
+    }
+
+    impl Notifier {
+        pub fn new() -> Notifier {
+            Notifier{addr: None}
+        }
+
+        pub fn get_addr(&self) -> &Option<Addr<MyWs>> {
+            &self.addr
+        }
+    }
+
+    impl Actor for Notifier {
+        type Context = Context<Self>;
+    }
+
+    impl Handler<Notification> for Notifier {
+        type Result = ();
+
+        fn handle(&mut self, msg: Notification, ctx: &mut Context<Self>) -> Self::Result {
+            self.addr.as_ref().unwrap().send(msg);
+        }
+    }
 }

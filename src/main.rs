@@ -1,20 +1,16 @@
-// mod server_com;
-// mod photogrammetrie;
 mod web_interface;
-//
+mod server_com;
+
 use std::str::FromStr;
-// use std::ops::{Deref, DerefMut};
-use actix_web::{HttpServer, App};
+use actix_web::{HttpServer, App, web};
 use std::net::SocketAddr;
-// use crate::AppState::{Start, ImageTaking};
-// use tokio::sync::Mutex;
-// use crate::photogrammetrie::{clear_images, save_image};
-// use serde_json::json;
-// use actix_web::web::Buf;
-// use std::collections::HashSet;
 use crate::web_interface::app_state::AppState;
-use tokio::sync::Mutex;
 use crate::web_interface::app_state;
+use crate::web_interface::model::ws::{Notifier, Notification};
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::ops::Deref;
+use actix::Actor;
 //
 // #[derive(Debug, PartialEq)]
 // enum AppState {
@@ -154,25 +150,27 @@ use crate::web_interface::app_state;
 // }
 
 mod endpoints {
-    use actix_web::{Responder, web, get, post};
+    use actix_web::{Responder, web, get, post, HttpRequest, HttpResponse};
     use crate::AppData;
     use crate::web_interface::model::{PageForm};
+    use actix_web_actors::ws;
+    use std::sync::Arc;
 
     #[get("/")]
     pub(crate) async fn index(data: web::Data<AppData>) -> impl Responder {
-        let app_state = data.app_state.lock().await;
+        let app_state = data.app_state.lock().unwrap();
         app_state.as_ref().unwrap().index()
     }
 
     #[get("/status")]
     pub(crate) async fn status(data: web::Data<AppData>) -> impl Responder {
-        let app_state = data.app_state.lock().await;
+        let app_state = data.app_state.lock().unwrap();
         app_state.as_ref().unwrap().status()
     }
 
     #[post("/page_form")]
-    pub(crate) async fn post_page_form(page_form: web::Form<PageForm>, data: web::Data<AppData>) ->impl Responder {
-        let mut app_state = data.app_state.lock().await;
+    pub(crate) async fn post_page_form(page_form: web::Form<PageForm>, data: web::Data<AppData>) -> impl Responder {
+        let mut app_state = data.app_state.lock().unwrap();
         let (new_app_state, res) = app_state.take().unwrap()
             .post_page_form(page_form.0);
         *app_state = Some(new_app_state);
@@ -180,30 +178,56 @@ mod endpoints {
     }
 
     #[get("/media_content")]
-    pub(crate) async fn get_media_content(data: web::Data<AppData>) ->impl Responder {
-        let mut app_state = data.app_state.lock().await;
+    pub(crate) async fn get_media_content(data: web::Data<AppData>) -> impl Responder {
+        let mut app_state = data.app_state.lock().unwrap();
         app_state.take().unwrap().get_resulting_content()
+    }
+
+    #[get("/ws_notification")]
+    pub(crate) async fn ws_notification(req: HttpRequest, stream: web::Payload, data: web::Data<AppData>) -> impl Responder {
+        let notifier = Arc::clone(&data.notifier);
+        let app_state = data.app_state.lock().unwrap();
+        app_state.as_ref().unwrap().ws_notification(req, stream, notifier)
     }
 }
 
 struct AppData {
-    app_state: Mutex<Option<Box<dyn AppState>>>
+    app_state: Mutex<Option<Box<dyn AppState + Send>>>,
+    notifier: Arc<Mutex<Notifier>>,
 }
 
 #[actix_web::main]
 async fn main() {
-    HttpServer::new(|| {
+    let notifier = Arc::new(Mutex::new(Notifier::new()));
+    let n2 = Arc::clone(&notifier);
+    let app_data = web::Data::new(AppData {
+        app_state: Mutex::new(Some(Box::new(app_state::Start {}))),
+        notifier,
+    });
+    thread::spawn(move || {
+        loop {
+            let notifier = n2.lock().unwrap();
+            let b = notifier.get_addr().clone();
+            if let Some(addr) = b {
+                addr.send(Notification("hi".to_string()));
+            }
+            drop(notifier);
+            thread::sleep(std::time::Duration::new(2, 0));
+        }
+    });
+    HttpServer::new(move || {
         App::new()
             .service(endpoints::index)
             .service(endpoints::status)
             .service(endpoints::post_page_form)
             .service(endpoints::get_media_content)
-            // .service(test)
-            // .service(post_configuration)
-            // .service(get_status)
-            // .service(index_file)
-            // .service(actix_files::Files::new("/", "html"))
-            .data(AppData{ app_state: Mutex::new(Some(Box::new(app_state::Start{})))})
+            .service(endpoints::ws_notification)
+// .service(test)
+// .service(post_configuration)
+// .service(get_status)
+// .service(index_file)
+// .service(actix_files::Files::new("/", "html"))
+            .app_data(app_data.clone())
     }).bind(SocketAddr::from_str("0.0.0.0:8080").unwrap())
         .unwrap()
         .run().await.unwrap();

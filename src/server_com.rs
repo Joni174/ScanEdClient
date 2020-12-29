@@ -2,12 +2,14 @@ use reqwest::{Response, Url};
 use serde::{Serialize, Deserialize};
 use std::str::FromStr;
 use actix_web::web;
+use std::thread;
+use crossbeam_channel::{Receiver, Sender};
 
 static AUFTRAG_ENPOINT: &'static str = "auftrag";
 static AUFNAHMEN_ENDPOINT: &'static str = "aufnahmen";
 
-#[derive(Deserialize, Serialize)]
-pub struct ImageTakingStatus {
+#[derive(Deserialize, Serialize, Clone)]
+pub struct Status {
     runde: i32,
     aufnahme: i32,
 }
@@ -28,9 +30,32 @@ pub struct RunConfig {
     url: String,
 }
 
-pub async fn get_status(run_config: &RunConfig) -> reqwest::Result<ImageTakingStatus> {
-    reqwest::get(str_to_url(&run_config.url).join(AUFTRAG_ENPOINT).unwrap()).await?
-        .json::<ImageTakingStatus>().await
+pub struct ServerCom {
+    run_config: RunConfig,
+    tx: Sender<String>,
+}
+
+impl ServerCom {
+    fn start(&self) {}
+}
+
+pub fn start_server_com(url: String, rounds: Vec<i32>, tx: Sender<String>) {
+    let server_com = ServerCom {
+        run_config: RunConfig {
+            rounds: rounds.iter().map(|round|
+                RoundConfig { runde: Round { anzahl: *round } }).collect::<Vec<_>>(),
+            url,
+        },
+        tx,
+    };
+    thread::spawn(move || {
+        server_com.start();
+    });
+}
+
+pub async fn get_status(url: &str) -> reqwest::Result<Status> {
+    reqwest::get(str_to_url(&url).join(AUFTRAG_ENPOINT).unwrap()).await?
+        .json::<Status>().await
 }
 
 fn str_to_url(str: &str) -> Url {

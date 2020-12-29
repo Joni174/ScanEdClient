@@ -10,5 +10,9 @@
 </div>
 
 <script type="text/javascript">
+    var socket = new WebSocket("ws://localhost:8080/ws_notification");
 
+    socket.onmessage = function (msg) {
+        document.getElementsByTagName("p")[0].innerHTML += "<br>" + msg.data;
+    }
 </script>
