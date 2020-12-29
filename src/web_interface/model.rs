@@ -48,12 +48,12 @@ pub mod ws {
     struct Msg(String);
 
     pub struct MyWs {
-        notifier: Arc<Mutex<Notifier>>
+        addr: Arc<Mutex<Option<Addr<MyWs>>>>
     }
 
     impl MyWs {
-        pub(crate) fn new(notifier: Arc<Mutex<Notifier>>) -> Self {
-            MyWs { notifier }
+        pub(crate) fn new(addr: Arc<Mutex<Option<Addr<MyWs>>>>) -> Self {
+            MyWs { addr }
         }
     }
 
@@ -82,8 +82,8 @@ pub mod ws {
             }
         }
         fn started(&mut self, ctx: &mut Self::Context) {
-            let mut notifier = self.notifier.lock().unwrap();
-            notifier.addr = Some(ctx.address())
+            let mut addr = self.addr.lock().unwrap();
+            *addr = Some(ctx.address())
         }
     }
 
@@ -99,30 +99,30 @@ pub mod ws {
     #[rtype(result = "()")]
     pub struct Notification(pub String);
 
-    #[derive(Clone)]
-    pub struct Notifier {
-        addr: Option<Addr<MyWs>>
-    }
-
-    impl Notifier {
-        pub fn new() -> Notifier {
-            Notifier{addr: None}
-        }
-
-        pub fn get_addr(&self) -> &Option<Addr<MyWs>> {
-            &self.addr
-        }
-    }
-
-    impl Actor for Notifier {
-        type Context = Context<Self>;
-    }
-
-    impl Handler<Notification> for Notifier {
-        type Result = ();
-
-        fn handle(&mut self, msg: Notification, ctx: &mut Context<Self>) -> Self::Result {
-            self.addr.as_ref().unwrap().send(msg);
-        }
-    }
+    // #[derive(Clone)]
+    // pub struct Notifier {
+    //     addr: Option<Addr<MyWs>>
+    // }
+    //
+    // impl Notifier {
+    //     pub fn new() -> Notifier {
+    //         Notifier{addr: None}
+    //     }
+    //
+    //     pub fn get_addr(&self) -> &Option<Addr<MyWs>> {
+    //         &self.addr
+    //     }
+    // }
+    //
+    // impl Actor for Notifier {
+    //     type Context = Context<Self>;
+    // }
+    //
+    // impl Handler<Notification> for Notifier {
+    //     type Result = ();
+    //
+    //     fn handle(&mut self, msg: Notification, ctx: &mut Context<Self>) -> Self::Result {
+    //         self.addr.as_ref().unwrap().send(msg);
+    //     }
+    // }
 }

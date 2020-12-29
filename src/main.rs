@@ -6,7 +6,7 @@ use actix_web::{HttpServer, App, web};
 use std::net::SocketAddr;
 use crate::web_interface::app_state::AppState;
 use crate::web_interface::app_state;
-use crate::web_interface::model::ws::{Notifier, Notification};
+use crate::web_interface::model::ws::{Notification, MyWs};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::ops::Deref;
@@ -185,7 +185,7 @@ mod endpoints {
 
     #[get("/ws_notification")]
     pub(crate) async fn ws_notification(req: HttpRequest, stream: web::Payload, data: web::Data<AppData>) -> impl Responder {
-        let notifier = Arc::clone(&data.notifier);
+        let notifier = Arc::clone(&data.addr);
         let app_state = data.app_state.lock().unwrap();
         app_state.as_ref().unwrap().ws_notification(req, stream, notifier)
     }
@@ -193,28 +193,18 @@ mod endpoints {
 
 struct AppData {
     app_state: Mutex<Option<Box<dyn AppState + Send>>>,
-    notifier: Arc<Mutex<Notifier>>,
+    addr: Arc<Mutex<Option<actix::Addr<MyWs>>>>,
 }
 
 #[actix_web::main]
 async fn main() {
-    let notifier = Arc::new(Mutex::new(Notifier::new()));
-    let n2 = Arc::clone(&notifier);
+    let addr = Arc::new(Mutex::new(None));
+    let addr2 = Arc::clone(&addr);
     let app_data = web::Data::new(AppData {
         app_state: Mutex::new(Some(Box::new(app_state::Start {}))),
-        notifier,
+        addr,
     });
-    thread::spawn(move || {
-        loop {
-            let notifier = n2.lock().unwrap();
-            let b = notifier.get_addr().clone();
-            if let Some(addr) = b {
-                addr.send(Notification("hi".to_string()));
-            }
-            drop(notifier);
-            thread::sleep(std::time::Duration::new(2, 0));
-        }
-    });
+
     HttpServer::new(move || {
         App::new()
             .service(endpoints::index)

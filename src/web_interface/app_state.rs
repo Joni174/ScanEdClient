@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use std::sync::{Mutex, Arc};
 use crossbeam_channel::Receiver;
 use actix_web_actors::ws;
-use crate::web_interface::model::ws::{MyWs, Notifier};
+use crate::web_interface::model::ws::{MyWs};
 use crate::server_com::start_server_com;
 use actix::Actor;
 
@@ -15,7 +15,7 @@ pub trait AppState {
     fn status(&self) -> HttpResponse;
     fn post_page_form(self: Box<Self>, page_form: PageForm) -> (Box<dyn AppState + Sync + Send>, HttpResponse);
     fn get_resulting_content(&self) -> HttpResponse;
-    fn ws_notification(&self, req: HttpRequest, stream: web::Payload, notifier: Arc<Mutex<Notifier>>) -> HttpResponse;
+    fn ws_notification(&self, req: HttpRequest, stream: web::Payload, notifier: Arc<Mutex<Option<actix::Addr<MyWs>>>>) -> HttpResponse;
 }
 
 fn render_master_page(html: String) -> String {
@@ -69,7 +69,7 @@ impl AppState for Start {
         render_not_implemented_for("Configuration")
     }
 
-    fn ws_notification(&self, req: HttpRequest, stream: web::Payload, notifier: Arc<Mutex<Notifier>>) -> HttpResponse {
+    fn ws_notification(&self, req: HttpRequest, stream: web::Payload, notifier: Arc<Mutex<Option<actix::Addr<MyWs>>>>) -> HttpResponse {
         unimplemented!()
     }
 }
@@ -115,7 +115,7 @@ impl AppState for ImagePhase {
             .body(actix_web::web::Bytes::from(latest_aufnahme.clone()))
     }
 
-    fn ws_notification(&self, req: HttpRequest, stream: web::Payload, notifier: Arc<Mutex<Notifier>>) -> HttpResponse {
+    fn ws_notification(&self, req: HttpRequest, stream: web::Payload, notifier: Arc<Mutex<Option<actix::Addr<MyWs>>>>) -> HttpResponse {
         match ws::start(MyWs::new(notifier), &req, stream) {
             Ok(res) => res,
             Err(err) => HttpResponse::InternalServerError().body(err.to_string())
