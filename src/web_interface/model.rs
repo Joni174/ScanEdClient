@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use crate::server_com::Status;
+use crate::server_com::com_model::Status;
 
 #[derive(Deserialize)]
 pub struct Auftrag {
