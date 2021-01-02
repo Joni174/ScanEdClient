@@ -1,5 +1,5 @@
 [package]
-name = "scan3d_client"
+name = "scaned_client"
 version = "0.1.0"
 authors = ["jonas <jonas.gastecker@sz-ybbs.ac.at>"]
 edition = "2018"
@@ -21,3 +21,4 @@ actix = "0.10.0"
 actix-web-actors = "3.0.0"
 crossbeam-channel = "0.5.0"
 async-trait = "0.1.42"
+env_logger = "0.8.2"

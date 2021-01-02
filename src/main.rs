@@ -13,7 +13,7 @@ use std::thread;
 use std::ops::Deref;
 use actix::Actor;
 use std::sync::Arc;
-
+use log::{info};
 
 mod endpoints {
     use actix_web::{Responder, web, get, post, delete, HttpRequest, HttpResponse};
@@ -85,11 +85,13 @@ struct AppData {
 #[actix_web::main]
 async fn main() {
     let addr = Arc::new(Mutex::new(None));
-    let addr2 = Arc::clone(&addr);
     let app_data = web::Data::new(AppData {
         app_state: Mutex::new(Some(Box::new(app_state::Start {}))),
         addr,
     });
+
+    env_logger::Builder::from_env(env_logger::Env::default()
+        .default_filter_or("info")).init();
 
     HttpServer::new(move || {
         App::new()

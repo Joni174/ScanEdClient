@@ -18,12 +18,17 @@ use crate::web_interface::app_state::constants::POLL_DELAY;
 use crate::server_com::{get_ready_image_list, get_aufnahme};
 use actix_web::web::Payload;
 use crate::photogrammetry::photogrammetry::start_photogrammetry;
+use serde::Serialize;
 
 mod constants {
     pub const CONTENT: &'static str = "media_content";
     pub const POLL_DELAY: u64 = 3; // in seconds
 }
 
+#[derive(Serialize)]
+struct MasterTemplateContext {
+    page_content: String
+}
 
 #[async_trait]
 pub trait AppState {
@@ -39,14 +44,14 @@ pub trait AppState {
 fn render_master_page(html: String) -> String {
     let mut tt = tinytemplate::TinyTemplate::new();
     let master_template = std::fs::read_to_string("html/master.html").unwrap();
-    tt.add_template(&master_template, "master").unwrap();
-    tt.render("master", &html).unwrap()
+    tt.add_template("master", &master_template).unwrap();
+    tt.render("master", &MasterTemplateContext{page_content: html}).unwrap()
 }
 
 fn render_page(path: &str) -> HttpResponse {
     let page_html = fs::read_to_string(path).unwrap();
     let rendered_html = render_master_page(page_html);
-    HttpResponse::Ok().body(Body::from(rendered_html))
+    HttpResponse::Ok().body(rendered_html)
 }
 
 fn add_html_body_from_file(mut http_response: HttpResponseBuilder, path: &str) -> HttpResponse {

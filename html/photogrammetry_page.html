@@ -1,0 +1,17 @@
+<div class="container">
+    <div class="row">
+        <div id="console-output" class="col" style="height: 200px; overflow: scroll">
+        </div>
+    </div>
+</div>
+
+<script type="text/javascript">
+    fetch('/media_content')
+        .then(response => response.json())
+        .then(data => document.getElementById('console-output').innerHTML = data);
+
+    webSocket = new WebSocket("ws://localhost:8080/")
+    webSocket.onmessage = function (event) {
+        document.getElementById('console-output').innerHTML = event.data
+    }
+</script>

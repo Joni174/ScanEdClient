@@ -20,7 +20,7 @@ enum Message {
 pub async fn start_photogrammetry(ws: Arc<Mutex<Option<Addr<MyWs>>>>,
                               console_output: Arc<Mutex<String>>,
                               mut shutdown_hook: Receiver<()>) -> Result<(), tokio::io::Error> {
-    let mut c = tokio::process::Command::new("python3 app.py")
+    let mut c = tokio::process::Command::new("python3 run.py")
         .stdout(Stdio::piped())
         .spawn()?;
     tokio::spawn(async move {
@@ -47,8 +47,9 @@ pub async fn start_photogrammetry(ws: Arc<Mutex<Option<Addr<MyWs>>>>,
                     send_over_ws(&ws, &json!(Message::Error(err.to_string())).to_string())
                 }
             }
-
-            console_output.lock().unwrap().push_str(&buf);
+            let mut console_output = console_output.lock().unwrap();
+            console_output.push_str(&buf);
+            console_output.push_str("\n");
         }
     });
     Ok(())
