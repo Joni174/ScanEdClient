@@ -71,6 +71,7 @@ pub mod ws {
             match msg {
                 Ok(ws::Message::Ping(msg)) => {
                     println!("ping: {:?}", &msg);
+                    _ctx.pong(&*msg);
                 }
                 Ok(ws::Message::Text(text)) => {
                     println!("text: {:?}", text);

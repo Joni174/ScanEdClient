@@ -3,8 +3,7 @@ use crate::web_interface::model::{PageForm, ImageTakingStatus};
 use actix_web::dev::HttpResponseBuilder;
 use std::fs;
 use std::collections::HashSet;
-use std::sync::{Arc};
-use tokio::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use crossbeam_channel::Receiver;
 use actix_web_actors::ws;
 use crate::web_interface::model::ws::{MyWs, Notification};
@@ -17,6 +16,8 @@ use actix_web::rt::time::delay_for;
 use tokio::time::Duration;
 use crate::web_interface::app_state::constants::POLL_DELAY;
 use crate::server_com::{get_ready_image_list, get_aufnahme};
+use actix_web::web::Payload;
+use crate::photogrammetry::photogrammetry::start_photogrammetry;
 
 mod constants {
     pub const CONTENT: &'static str = "media_content";
@@ -42,6 +43,12 @@ fn render_master_page(html: String) -> String {
     tt.render("master", &html).unwrap()
 }
 
+fn render_page(path: &str) -> HttpResponse {
+    let page_html = fs::read_to_string(path).unwrap();
+    let rendered_html = render_master_page(page_html);
+    HttpResponse::Ok().body(Body::from(rendered_html))
+}
+
 fn add_html_body_from_file(mut http_response: HttpResponseBuilder, path: &str) -> HttpResponse {
     let start_up_html = fs::read_to_string(path).unwrap();
     http_response.body(Body::from(start_up_html))
@@ -63,7 +70,7 @@ pub struct Start {}
 #[async_trait]
 impl AppState for Start {
     async fn index(&self) -> HttpResponse {
-        add_html_body_from_file(HttpResponse::Ok(), "html/startup_page.html")
+        render_page("html/startup_page.html")
     }
 
     async fn status(&self) -> HttpResponse {
@@ -144,8 +151,8 @@ impl ImagePhase {
                 server_com::com_model::RunConfig::from_vec(rounds),
                 &url,
             ).await {
-                    log::error!("{}", err.to_string());
-                    return;
+                log::error!("{}", err.to_string());
+                return;
             }
 
             loop {
@@ -163,7 +170,7 @@ impl ImagePhase {
 #[async_trait]
 impl AppState for ImagePhase {
     async fn index(&self) -> HttpResponse {
-        add_html_body_from_file(HttpResponse::Ok(), "html/image_phase_page.html")
+        render_page("html/image_phase_page.html")
     }
 
     async fn status(&self) -> HttpResponse {
@@ -180,7 +187,16 @@ impl AppState for ImagePhase {
     }
 
     async fn post_page_form(self: Box<Self>, page_form: PageForm) -> (Box<dyn AppState + Sync + Send>, HttpResponse) {
-        unimplemented!()
+        let (sender, receiver) = tokio::sync::oneshot::channel::<()>();
+        let photogrammetry_phase = PhotogrammetryPhase::new(sender);
+        match start_photogrammetry(
+            Arc::clone(&photogrammetry_phase.new_status),
+            Arc::clone(&photogrammetry_phase.console_output),
+            receiver
+        ).await {
+            Ok(_) => {(Box::new(photogrammetry_phase), redirect_response("/"))},
+            Err(err) => {(self, HttpResponse::InternalServerError().body(err.to_string()))}
+        }
     }
 
     async fn get_content(&self) -> HttpResponse {
@@ -220,5 +236,90 @@ impl AppState for ImagePhase {
             Ok(res) => res,
             Err(err) => HttpResponse::InternalServerError().body(err.to_string())
         }
+    }
+}
+
+pub struct PhotogrammetryPhase {
+    console_output: Arc<Mutex<String>>,
+    new_status: Arc<Mutex<Option<Addr<MyWs>>>>,
+    cancel_handle: tokio::sync::oneshot::Sender<()>
+}
+
+impl PhotogrammetryPhase {
+    fn new(sender: tokio::sync::oneshot::Sender<()>) -> PhotogrammetryPhase {
+        PhotogrammetryPhase {
+            console_output: Arc::new(Mutex::new(String::new())),
+            new_status: Arc::new(Mutex::new(None)),
+            cancel_handle: sender
+        }
+    }
+}
+
+#[async_trait]
+impl AppState for PhotogrammetryPhase {
+    async fn index(&self) -> HttpResponse {
+        render_page("html/photogrammetry_page.html")
+    }
+
+    async fn status(&self) -> HttpResponse {
+        endpoint_not_found_in_phase("status", "PhotogrammetryPhase")
+    }
+
+    async fn reset(self: Box<Self>) -> (Box<dyn AppState + Sync + Send>, HttpResponse) {
+        (Box::new(Start {}), redirect_response("/"))
+    }
+
+    async fn post_page_form(self: Box<Self>, page_form: PageForm) -> (Box<dyn AppState + Sync + Send>, HttpResponse) {
+        (Box::new(ModelPhase {}), redirect_response("/"))
+    }
+
+    async fn get_content(&self) -> HttpResponse {
+        HttpResponse::Ok().body(self.console_output.lock().unwrap().deref())
+    }
+
+    async fn get_specific_content(&self, name: &str) -> HttpResponse {
+        endpoint_not_found_in_phase("/media_content/{content_name}", "PhotogrammetryPhase")
+    }
+
+    fn ws_notification(&self, req: HttpRequest, stream: Payload) -> HttpResponse {
+        let notifier = Arc::clone(&self.new_status);
+        match ws::start(MyWs::new(notifier), &req, stream)
+        {
+            Ok(res) => res,
+            Err(err) => HttpResponse::InternalServerError().body(err.to_string())
+        }
+    }
+}
+
+pub struct ModelPhase {}
+
+#[async_trait]
+impl AppState for ModelPhase {
+    async fn index(&self) -> HttpResponse {
+        unimplemented!()
+    }
+
+    async fn status(&self) -> HttpResponse {
+        unimplemented!()
+    }
+
+    async fn reset(self: Box<Self>) -> (Box<dyn AppState + Sync + Send>, HttpResponse) {
+        unimplemented!()
+    }
+
+    async fn post_page_form(self: Box<Self>, page_form: PageForm) -> (Box<dyn AppState + Sync + Send>, HttpResponse) {
+        unimplemented!()
+    }
+
+    async fn get_content(&self) -> HttpResponse {
+        unimplemented!()
+    }
+
+    async fn get_specific_content(&self, name: &str) -> HttpResponse {
+        unimplemented!()
+    }
+
+    fn ws_notification(&self, req: HttpRequest, stream: Payload) -> HttpResponse {
+        unimplemented!()
     }
 }
