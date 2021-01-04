@@ -4,43 +4,30 @@ use std::str::FromStr;
 use actix_web::web;
 use std::thread;
 use crossbeam_channel::{Receiver, Sender};
-use crate::server_com::com_model::{Status, RunConfig};
+use crate::server_com::com_model::{Status, Auftrag};
 use std::collections::HashSet;
+use std::error::Error;
 
 const AUFTRAG_ENPOINT: &'static str = "auftrag";
-const AUFNAHMEN_ENDPOINT: &'static str = "aufnahmen";
+const AUFNAHMEN_ENDPOINT: &'static str = "aufnahme";
 
 pub mod com_model {
     use serde::{Serialize, Deserialize};
+
     #[derive(Deserialize, Serialize, Clone)]
     pub struct Status {
         runde: i32,
         aufnahme: i32,
     }
 
-    #[derive(Serialize, PartialEq, Deserialize, Debug)]
-    pub struct Round {
-        anzahl: i32
+    #[derive(Deserialize, Serialize, Debug)]
+    pub struct Auftrag {
+        pub auftrag: Vec<i32>
     }
 
-    #[derive(Serialize, PartialEq, Deserialize, Debug)]
-    pub struct RoundConfig {
-        runde: Round
-    }
-
-    #[derive(Debug, PartialEq, Serialize)]
-    pub struct RunConfig {
-        rounds: Vec<RoundConfig>,
-    }
-
-    impl RunConfig {
-        pub fn from_vec(rounds: Vec<i32>) -> RunConfig {
-            RunConfig {
-                rounds: rounds
-                    .iter()
-                    .map(|round| RoundConfig{runde: Round{anzahl: *round}})
-                    .collect::<Vec<_>>()
-            }
+    impl Auftrag {
+        pub fn from_vec(rounds: Vec<i32>) -> Auftrag {
+            Auftrag{auftrag: rounds}
         }
     }
 }
@@ -54,11 +41,14 @@ fn str_to_url(str: &str) -> Url {
     reqwest::Url::from_str(&str).unwrap()
 }
 
-pub async fn post_auftrag(run_config: RunConfig, url: &str) -> reqwest::Result<Response> {
+pub async fn post_auftrag(run_config: Auftrag, url: &str) -> Result<Response, Box<dyn Error + Send>> {
     let client = reqwest::Client::new();
-    client.post(str_to_url(url).join(AUFTRAG_ENPOINT).unwrap())
+    client.post(str_to_url(url)
+        .join(AUFTRAG_ENPOINT).map_err(|err| -> Box<dyn Error + Send> { Box::new(err) })?)
         .json(&run_config)
-        .send().await
+        .send()
+        .await
+        .map_err(|err| -> Box<dyn Error + Send> { Box::new(err) })
 }
 
 pub(crate) async fn get_ready_image_list(url: &str) -> reqwest::Result<HashSet<String>> {

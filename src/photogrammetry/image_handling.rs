@@ -19,10 +19,11 @@ impl ImageStore {
         Ok(ImageStore { image_list: Mutex::new(HashSet::new()) })
     }
 
-    pub async fn store_image(&self, name: String, image: &Vec<u8>) -> Result<(), tokio::io::Error> {
+    pub async fn store_image(&self, image_path: &str, image: &Vec<u8>) -> Result<(), tokio::io::Error> {
         let mut image_list = self.image_list.lock().await;
-        save_image(&name, &image).await?;
-        image_list.insert(name);
+        let image_name = image_path.split("/").last().unwrap();
+        save_image(image_name, &image).await?;
+        image_list.insert(image_path.to_string());
         Ok(())
     }
 
@@ -62,9 +63,9 @@ impl ImageStore {
             .collect::<Vec<_>>();
         drop(old_images); // release lock to enable status beeing polled while images are downloading
         let mut downloaded = 0;
-        for image_name in new_images {
+        for image_path in new_images {
             //downlaod aufnahme from server
-            let image = match get_aufnahme(&url, &image_name).await {
+            let image = match get_aufnahme(&url, &image_path).await {
                 Ok(image) => image,
                 Err(err) => {
                     log::error!("{}", err.to_string());
@@ -73,7 +74,7 @@ impl ImageStore {
             };
 
             // save aufname locally
-            if let Err(err) = self.store_image(image_name, &image).await {
+            if let Err(err) = self.store_image(&image_path, &image).await {
                 log::error!("{}", err.to_string());
                 return false;
             }
@@ -84,7 +85,7 @@ impl ImageStore {
 }
 
 async fn save_image(name: &str, img: &Vec<u8>) -> Result<(), tokio::io::Error> {
-    let mut file = File::open(image_folder().join(name)).await?;
+    let mut file = File::create(image_folder().join(name)).await?;
     file.write_all(img).await?;
     Ok(())
 }

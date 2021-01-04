@@ -82,8 +82,13 @@ struct AppData {
     addr: Arc<Mutex<Option<actix::Addr<MyWs>>>>,
 }
 
+use std::collections::HashSet;
+use serde_json::json;
 #[actix_web::main]
 async fn main() {
+    let mut h: HashSet<String> = HashSet::new();
+
+    println!("{}", json!(h));
     let addr = Arc::new(Mutex::new(None));
     let app_data = web::Data::new(AppData {
         app_state: Mutex::new(Some(Box::new(app_state::Start {}))),

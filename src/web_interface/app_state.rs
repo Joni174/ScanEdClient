@@ -99,7 +99,8 @@ impl AppState for Start {
         // if initializing folder fails return error
         let image_phase = match ImagePhase::new(
             auftrag.get_url().to_string(),
-            auftrag.into_vec()).await {
+            auftrag.into_vec()
+        ).await {
             Ok(image_phase) => image_phase,
             Err(err) => {
                 return (self, HttpResponse::InternalServerError().body(err.to_string()));
@@ -151,22 +152,21 @@ impl ImagePhase {
         let rounds = self.rounds.clone();
         let notification_handle = Arc::clone(&self.new_status_notifier);
         let image_store = Arc::clone(&self.image_store);
+        if let Err(err) = server_com::post_auftrag(
+            server_com::com_model::Auftrag::from_vec(rounds),
+            &url,
+        ).await {
+            log::error!("{}", err.to_string());
+            return;
+        }
         tokio::spawn(async move {
-            if let Err(err) = server_com::post_auftrag(
-                server_com::com_model::RunConfig::from_vec(rounds),
-                &url,
-            ).await {
-                log::error!("{}", err.to_string());
-                return;
-            }
-
             loop {
                 if image_store.download_new_images(&url).await {
                     if let Some(handle) = notification_handle.lock().unwrap().as_ref() {
                         handle.do_send(Notification(String::from("new image")));
                     }
-                    delay_for(tokio::time::Duration::from_secs(POLL_DELAY)).await;
                 }
+                delay_for(tokio::time::Duration::from_secs(POLL_DELAY)).await;
             }
         });
     }

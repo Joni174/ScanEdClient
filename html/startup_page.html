@@ -1,15 +1,27 @@
-<div class="container">
-    <div class="row">
-        <!-- Left side -->
-        <div class="col">
-            <div class="row">
-                <form method="POST" action="/page_form">
-                    <input type="hidden" name="type" value="Auftrag">
-                    <div class="row"><h2>Parameters</h2></div>
+<div class="container justify-content-md-center">
+    <div class="row justify-content-md-center container">
+        <div class="row">
+            <div class="col">
+                <h1>Konnektivität</h1>
+                <form class="container">
                     <div class="row">
                         <div class="col"><label for="input_hostname">Hostname</label></div>
-                        <div class="col"><input name="input_hostname" id="input_hostname" type="text"></div>
+                        <div class="col"><input id="input_hostname" type="text" value="10.0.0.1"></div>
                     </div>
+                    <div class="row">
+                        <div class="col"><label for="input_port">Port</label></div>
+                        <div class="col"><input id="input_port" type="text" value="8000"></div>
+                    </div>
+                    <div class="row">
+                        <input type="button" onclick="read_form_values()" value="Sichern">
+                    </div>
+                </form>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col">
+                <h1>Auftrag</h1>
+                <form class="container" id="auftrag" method="POST" action="/page_form">
                     <div class="row">
                         <div class="col"><label for="input_runde1">Runde 1</label></div>
                         <div class="col"><input name="input_runde1" id="input_runde1" type="number"></div>
@@ -22,13 +34,49 @@
                         <div class="col"><label for="input_runde3">Runde 3</label></div>
                         <div class="col"><input name="input_runde3" id="input_runde3" type="number"></div>
                     </div>
-                    <input type="submit" value="Auftrag absetzen">
+                    <input type="button" onclick="submit_form()" value="Auftrag absetzen">
                 </form>
             </div>
         </div>
-        <!-- Left side -->
-        <div class="col">
-            <iframe src="http://10.0.0.1"></iframe>
+    </div>
+    <!-- Left side -->
+    <div class="row justify-content-md-center">
+        <div class="col-sm">
+            <img width="60%" id="livestream" src="" alt=""/>
         </div>
     </div>
 </div>
+
+<script type="text/javascript">
+    var url = "";
+
+    function submit_form() {
+        console.log("p");
+        document.getElementsByTagName("img")[0].setAttribute("src", "");
+        document.getElementsByTagName("form")[0].submit();
+    }
+
+
+    function clear_stream_fill_in_hostname() {
+        if (url === "") {
+            alert("Fehler: Hostname nicht vorhanden!")
+        }
+        const form = document.getElementById("auftrag")
+        var hostname_input = document.createElement("input");
+        hostname_input.setAttribute("type", "text");
+        hostname_input.setAttribute("name", "dob");
+        hostname_input.setAttribute("value", url);
+        form.appendChild(hostname_input);
+    }
+
+    function read_form_values() {
+        const hostname = document.getElementById("input_hostname").value;
+        const server_port = ":" + document.getElementById("input_port").value;
+        const stream_port = ":" + "8080";
+        const protocol = "http://";
+        const stream_path = "/stream/video.mjpeg"
+        document.getElementById("livestream")
+            .setAttribute("src", protocol + hostname + stream_port + stream_path)
+        url = protocol + hostname + server_port;
+    }
+</script>
