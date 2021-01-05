@@ -7,23 +7,14 @@ use actix_web::{HttpServer, App, web};
 use std::net::SocketAddr;
 use crate::web_interface::app_state::AppState;
 use crate::web_interface::app_state;
-use crate::web_interface::model::ws::{Notification, MyWs};
 use tokio::sync::{Mutex};
-use std::thread;
-use std::ops::Deref;
-use actix::Actor;
-use std::sync::Arc;
 use log::{info};
 
 mod endpoints {
     use actix_web::{Responder, web, get, post, delete, HttpRequest, HttpResponse};
     use crate::AppData;
     use crate::web_interface::model::{PageForm};
-    use actix_web_actors::ws;
-    use std::sync::Arc;
-    use tokio::sync::Mutex;
     use log::{info};
-    use actix_web::error::PayloadError::Http2Payload;
 
     #[get("/")]
     pub(crate) async fn index(data: web::Data<AppData>) -> impl Responder {
@@ -61,7 +52,7 @@ mod endpoints {
     #[get("/media_content")]
     pub(crate) async fn get_media_content(data: web::Data<AppData>) -> impl Responder {
         info!("serving media_content index");
-        let mut app_state = data.app_state.lock().await;
+        let app_state = data.app_state.lock().await;
         app_state.as_ref().unwrap().get_content().await
     }
 
@@ -80,7 +71,6 @@ mod endpoints {
     #[get("/ws_notification")]
     pub(crate) async fn ws_notification(req: HttpRequest, stream: web::Payload, data: web::Data<AppData>) -> impl Responder {
         info!("serving ws_notification");
-        let notifier = Arc::clone(&data.addr);
         let app_state = data.app_state.lock().await;
         app_state.as_ref().unwrap().ws_notification(req, stream).await
     }
@@ -97,15 +87,12 @@ mod endpoints {
 
 struct AppData {
     app_state: Mutex<Option<Box<dyn AppState + Send>>>,
-    addr: Arc<Mutex<Option<actix::Addr<MyWs>>>>,
 }
 
 #[actix_web::main]
 async fn main() {
-    let addr = Arc::new(Mutex::new(None));
     let app_data = web::Data::new(AppData {
         app_state: Mutex::new(Some(Box::new(app_state::Start {}))),
-        addr,
     });
 
     env_logger::Builder::from_env(env_logger::Env::default()

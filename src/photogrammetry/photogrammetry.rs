@@ -3,11 +3,14 @@ use crate::web_interface::model::ws::{MyWs, Notification};
 use tokio::sync::oneshot::Receiver;
 use std::process::Stdio;
 use tokio::prelude::*;
-use tokio::io::{BufReader, Error};
+use tokio::io::{BufReader};
 use serde::Serialize;
 use serde_json::json;
-use std::ops::Deref;
 use actix::Addr;
+use std::error::Error;
+use std::fs;
+use std::path::PathBuf;
+use std::str::FromStr;
 
 #[derive(Serialize)]
 #[serde(tag = "type")]
@@ -38,7 +41,7 @@ pub async fn start_photogrammetry(ws: Arc<Mutex<Option<Addr<MyWs>>>>,
                     //finished
                     send_over_ws(&ws, &json!(Message::Finished).to_string().to_string())
                 }
-                Ok(size) => {
+                Ok(_size) => {
                     // new console line
                     send_over_ws(&ws, &json!(Message::NewConsoleOutput(buf.clone())).to_string())
                 }
@@ -52,6 +55,20 @@ pub async fn start_photogrammetry(ws: Arc<Mutex<Option<Addr<MyWs>>>>,
             console_output.push_str("\n");
         }
     });
+    Ok(())
+}
+
+pub async fn clear_local_folders() -> Result<(), Box<dyn Error + Send>> {
+    let photogrammetry_dirs = vec![
+        PathBuf::from_str("texuring").unwrap(),
+        PathBuf::from_str("texuring").unwrap(),
+        PathBuf::from_str("texuring").unwrap(),
+    ];
+    for dir_path in photogrammetry_dirs {
+        if dir_path.exists() {
+            fs::remove_dir_all(dir_path).await.map_err;
+        }
+    }
     Ok(())
 }
 

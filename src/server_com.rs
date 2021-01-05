@@ -1,10 +1,6 @@
 use reqwest::{Response, Url};
-use serde::{Serialize, Deserialize};
 use std::str::FromStr;
-use actix_web::web;
-use std::thread;
-use crossbeam_channel::{Receiver, Sender};
-use crate::server_com::com_model::{Status, Auftrag};
+use crate::server_com::com_model::{ServerStatus, Auftrag};
 use std::collections::HashSet;
 use std::error::Error;
 use log::{info};
@@ -15,8 +11,8 @@ const AUFNAHMEN_ENDPOINT: &'static str = "aufnahme";
 pub mod com_model {
     use serde::{Serialize, Deserialize};
 
-    #[derive(Deserialize, Serialize, Clone)]
-    pub struct Status {
+    #[derive(Deserialize, Serialize, Clone, PartialEq)]
+    pub struct ServerStatus {
         runde: i32,
         aufnahme: i32,
     }
@@ -30,24 +26,30 @@ pub mod com_model {
         pub fn from_vec(rounds: Vec<i32>) -> Auftrag {
             Auftrag { auftrag: rounds }
         }
+        pub fn into_target_status(self) -> ServerStatus {
+            ServerStatus {
+                runde: self.auftrag.len() as i32,
+                aufnahme: *self.auftrag.last().unwrap()
+            }
+        }
     }
 }
 
-pub async fn get_status(url: &str) -> reqwest::Result<Status> {
+pub async fn get_status(url: &str) -> reqwest::Result<ServerStatus> {
     reqwest::get(str_to_url(&url).join(AUFTRAG_ENPOINT).unwrap()).await?
-        .json::<Status>().await
+        .json::<ServerStatus>().await
 }
 
 fn str_to_url(str: &str) -> Url {
     reqwest::Url::from_str(&str).unwrap()
 }
 
-pub async fn post_auftrag(run_config: Auftrag, url: &str) -> Result<Response, Box<dyn Error + Send>> {
-    info!("post auftrag: {:?}", run_config);
+pub async fn post_auftrag(auftrag: Auftrag, url: &str) -> Result<Response, Box<dyn Error + Send>> {
+    info!("post auftrag: {:?}", auftrag);
     let client = reqwest::Client::new();
     client.post(str_to_url(url)
         .join(AUFTRAG_ENPOINT).map_err(|err| -> Box<dyn Error + Send> { Box::new(err) })?)
-        .json(&run_config)
+        .json(&auftrag)
         .send()
         .await
         .map_err(|err| -> Box<dyn Error + Send> { Box::new(err) })

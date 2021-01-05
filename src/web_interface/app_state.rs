@@ -1,28 +1,22 @@
-use actix_web::{HttpResponse, body::Body, HttpRequest, web, Error};
-use crate::web_interface::model::{PageForm, ImageTakingStatus};
-use actix_web::dev::HttpResponseBuilder;
+use actix_web::{HttpResponse, HttpRequest, web};
+use crate::web_interface::model::{PageForm};
 use std::fs;
-use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
-use crossbeam_channel::Receiver;
 use actix_web_actors::ws;
-use crate::web_interface::model::ws::{MyWs, Notification};
-use actix::{Actor, Addr};
-use crate::server_com;
-use crate::photogrammetry::image_handling::ImageStore;
+use crate::web_interface::model::ws::{MyWs};
+use actix::{Addr};
+use crate::photogrammetry::image_handling::{ImageDownloader};
 use async_trait::async_trait;
 use std::ops::Deref;
-use actix_web::rt::time::delay_for;
-use tokio::time::Duration;
-use crate::web_interface::app_state::constants::POLL_DELAY;
-use crate::server_com::{get_ready_image_list, get_aufnahme};
+use crate::server_com::{com_model};
 use actix_web::web::Payload;
 use crate::photogrammetry::photogrammetry::start_photogrammetry;
 use serde::Serialize;
+use std::error::Error;
+use crate::server_com;
 
 mod constants {
     pub const CONTENT: &'static str = "media_content";
-    pub const POLL_DELAY: u64 = 3; // in seconds
 }
 
 #[derive(Serialize)]
@@ -52,11 +46,6 @@ fn render_page(path: &str) -> HttpResponse {
     let page_html = fs::read_to_string(path).unwrap();
     let rendered_html = render_master_page(page_html);
     HttpResponse::Ok().body(rendered_html)
-}
-
-fn add_html_body_from_file(mut http_response: HttpResponseBuilder, path: &str) -> HttpResponse {
-    let start_up_html = fs::read_to_string(path).unwrap();
-    http_response.body(Body::from(start_up_html))
 }
 
 fn endpoint_not_found_in_phase(endpoint: &str, phase: &str) -> HttpResponse {
@@ -96,7 +85,7 @@ impl AppState for Start {
             );
         };
 
-        // if initializing folder fails return error
+        // if initializing folder or post request to server fails return error
         let image_phase = match ImagePhase::new(
             auftrag.get_url().to_string(),
             auftrag.into_vec()
@@ -106,8 +95,6 @@ impl AppState for Start {
                 return (self, HttpResponse::InternalServerError().body(err.to_string()));
             }
         };
-        // start downloading images
-        image_phase.start_server_com().await;
 
         (
             Box::new(image_phase),
@@ -129,46 +116,23 @@ impl AppState for Start {
 }
 
 pub struct ImagePhase {
-    url: String,
-    rounds: Vec<i32>,
-    server_status: Arc<std::sync::Mutex<ImageTakingStatus>>,
-    new_status_notifier: Arc<std::sync::Mutex<Option<Addr<MyWs>>>>,
-    image_store: Arc<ImageStore>,
+    new_status_notifier: Arc<Mutex<Option<Addr<MyWs>>>>,
+    image_downloader: Arc<ImageDownloader>,
 }
 
 impl ImagePhase {
-    async fn new(url: String, rounds: Vec<i32>) -> tokio::io::Result<ImagePhase> {
+    async fn new(url: String, rounds: Vec<i32>) -> Result<ImagePhase, Box<dyn Error + Send>> {
+        server_com::post_auftrag(com_model::Auftrag::from_vec(rounds.clone()), &url).await?;
+        let new_status_notifier = Arc::new(Mutex::new(None));
+        let image_downloader = Arc::new(ImageDownloader::new(
+            url.clone(),
+            com_model::Auftrag::from_vec(rounds.clone()).into_target_status(),
+            Arc::clone(&new_status_notifier)).await?);
+        Arc::clone(&image_downloader).start().await;
         Ok(ImagePhase {
-            url,
-            rounds,
-            server_status: Arc::new(std::sync::Mutex::new(ImageTakingStatus::Start)),
-            new_status_notifier: Arc::new(std::sync::Mutex::new(None)),
-            image_store: Arc::new(ImageStore::new().await?),
+            new_status_notifier,
+            image_downloader
         })
-    }
-
-    async fn start_server_com(&self) {
-        let url = self.url.clone();
-        let rounds = self.rounds.clone();
-        let notification_handle = Arc::clone(&self.new_status_notifier);
-        let image_store = Arc::clone(&self.image_store);
-        if let Err(err) = server_com::post_auftrag(
-            server_com::com_model::Auftrag::from_vec(rounds),
-            &url,
-        ).await {
-            log::error!("{}", err.to_string());
-            return;
-        }
-        tokio::spawn(async move {
-            loop {
-                if image_store.download_new_images(&url).await {
-                    if let Some(handle) = notification_handle.lock().unwrap().as_ref() {
-                        handle.do_send(Notification(String::from("new image")));
-                    }
-                }
-                delay_for(tokio::time::Duration::from_secs(POLL_DELAY)).await;
-            }
-        });
     }
 }
 
@@ -179,19 +143,16 @@ impl AppState for ImagePhase {
     }
 
     async fn status(&self) -> HttpResponse {
-        //crate::server_com::get_status(&self.url)
-        HttpResponse::Ok().json(self.server_status.lock().unwrap().clone())
+        let status = self.image_downloader.get_status().await;
+        HttpResponse::Ok().json(status)
     }
 
     async fn reset(self: Box<Self>) -> (Box<dyn AppState + Sync + Send>, HttpResponse) {
-        if let Err(err) = self.image_store.reset().await {
-            (self, HttpResponse::InternalServerError().body(err.to_string()))
-        } else {
-            (Box::new(Start {}), HttpResponse::Ok().finish())
-        }
+        self.image_downloader.reset().await;
+        (Box::new(Start {}), HttpResponse::Ok().finish())
     }
 
-    async fn post_page_form(self: Box<Self>, page_form: PageForm) -> (Box<dyn AppState + Sync + Send>, HttpResponse) {
+    async fn post_page_form(self: Box<Self>, _page_form: PageForm) -> (Box<dyn AppState + Sync + Send>, HttpResponse) {
         let (sender, receiver) = tokio::sync::oneshot::channel::<()>();
         let photogrammetry_phase = PhotogrammetryPhase::new(sender);
         match start_photogrammetry(
@@ -205,7 +166,7 @@ impl AppState for ImagePhase {
     }
 
     async fn get_content(&self) -> HttpResponse {
-        let image_list = self.image_store.get_image_list().await
+        let image_list = self.image_downloader.get_image_list().await
             .iter()
             .map(|image_name| format!("/{}/{}", constants::CONTENT, image_name))
             .collect::<Vec<_>>();
@@ -215,7 +176,7 @@ impl AppState for ImagePhase {
     }
 
     async fn get_specific_content(&self, name: &str) -> HttpResponse {
-        match self.image_store.get_image(&name.to_string()).await {
+        match self.image_downloader.get_image(&name.to_string()).await {
             Ok(img) => {
                 HttpResponse::Ok().body(actix_web::web::Bytes::from(img))
             }

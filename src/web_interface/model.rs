@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use crate::server_com::com_model::Status;
+use crate::server_com::com_model::ServerStatus;
 
 #[derive(Deserialize)]
 pub struct Auftrag {
@@ -28,19 +28,16 @@ impl Auftrag {
     }
 }
 
-#[derive(Serialize, Clone)]
-pub enum ImageTakingStatus {
+#[derive(Serialize, Clone, PartialEq)]
+pub enum ImageAppStatus {
     Start,
-    TakingImages(Status),
+    TakingImages(ServerStatus),
     Finished,
 }
 
 pub mod ws {
-    use actix::{Actor, Message, StreamHandler, AsyncContext, Context, Addr, ActorContext, Handler, WrapFuture};
+    use actix::{Actor, Message, StreamHandler, AsyncContext, Addr, Handler};
     use actix_web_actors::ws;
-    use serde_json::json;
-    use serde::Serialize;
-    use crossbeam_channel::Receiver;
     use std::sync::{Arc, Mutex};
 
     #[derive(Message, Clone)]
