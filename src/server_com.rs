@@ -7,6 +7,7 @@ use crossbeam_channel::{Receiver, Sender};
 use crate::server_com::com_model::{Status, Auftrag};
 use std::collections::HashSet;
 use std::error::Error;
+use log::{info};
 
 const AUFTRAG_ENPOINT: &'static str = "auftrag";
 const AUFNAHMEN_ENDPOINT: &'static str = "aufnahme";
@@ -27,7 +28,7 @@ pub mod com_model {
 
     impl Auftrag {
         pub fn from_vec(rounds: Vec<i32>) -> Auftrag {
-            Auftrag{auftrag: rounds}
+            Auftrag { auftrag: rounds }
         }
     }
 }
@@ -42,6 +43,7 @@ fn str_to_url(str: &str) -> Url {
 }
 
 pub async fn post_auftrag(run_config: Auftrag, url: &str) -> Result<Response, Box<dyn Error + Send>> {
+    info!("post auftrag: {:?}", run_config);
     let client = reqwest::Client::new();
     client.post(str_to_url(url)
         .join(AUFTRAG_ENPOINT).map_err(|err| -> Box<dyn Error + Send> { Box::new(err) })?)
@@ -52,12 +54,14 @@ pub async fn post_auftrag(run_config: Auftrag, url: &str) -> Result<Response, Bo
 }
 
 pub(crate) async fn get_ready_image_list(url: &str) -> reqwest::Result<HashSet<String>> {
+    info!("requesting image index from server");
     Ok(reqwest::get(
         str_to_url(url).join(AUFNAHMEN_ENDPOINT).unwrap()
     ).await?.json::<HashSet<String>>().await.unwrap())
 }
 
 pub(crate) async fn get_aufnahme(url: &str, img_path: &String) -> reqwest::Result<Vec<u8>> {
+    info!("requesting image from server");
     let response = reqwest::get(str_to_url(url)
         .join(AUFNAHMEN_ENDPOINT).unwrap()
         .join(&img_path).unwrap())

@@ -21,7 +21,7 @@
         <div class="row">
             <div class="col">
                 <h1>Auftrag</h1>
-                <form class="container" id="auftrag" method="POST" action="/page_form">
+                <form class="container" onsubmit="submit_form()" id="auftrag" method="POST" action="/page_form">
                     <div class="row">
                         <div class="col"><label for="input_runde1">Runde 1</label></div>
                         <div class="col"><input name="input_runde1" id="input_runde1" type="number"></div>
@@ -34,7 +34,8 @@
                         <div class="col"><label for="input_runde3">Runde 3</label></div>
                         <div class="col"><input name="input_runde3" id="input_runde3" type="number"></div>
                     </div>
-                    <input type="button" onclick="submit_form()" value="Auftrag absetzen">
+                    <input type="submit" value="Auftrag aufgeben">
+                    <input type="hidden" typeof="text" name="type" value="Auftrag">
                 </form>
             </div>
         </div>
@@ -52,19 +53,21 @@
 
     function submit_form() {
         console.log("p");
+        const no_url = url === "";
+        if (no_url) {
+            alert("Hostname und Port muss gesetzt werden!")
+        }
         document.getElementsByTagName("img")[0].setAttribute("src", "");
-        document.getElementsByTagName("form")[0].submit();
+        clear_stream_fill_in_hostname();
+        return !no_url
     }
 
 
     function clear_stream_fill_in_hostname() {
-        if (url === "") {
-            alert("Fehler: Hostname nicht vorhanden!")
-        }
         const form = document.getElementById("auftrag")
         var hostname_input = document.createElement("input");
         hostname_input.setAttribute("type", "text");
-        hostname_input.setAttribute("name", "dob");
+        hostname_input.setAttribute("name", "input_hostname");
         hostname_input.setAttribute("value", url);
         form.appendChild(hostname_input);
     }

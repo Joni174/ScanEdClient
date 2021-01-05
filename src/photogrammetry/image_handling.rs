@@ -23,7 +23,7 @@ impl ImageStore {
         let mut image_list = self.image_list.lock().await;
         let image_name = image_path.split("/").last().unwrap();
         save_image(image_name, &image).await?;
-        image_list.insert(image_path.to_string());
+        image_list.insert(image_name.to_string());
         Ok(())
     }
 
@@ -58,7 +58,7 @@ impl ImageStore {
 
         let old_images = self.image_list.lock().await;
         let new_images = available_images
-            .difference(&old_images)
+            .difference(&HashSet::from_iter(old_images.iter().map(|image_name| format!("/aufnahme/{}", image_name))))
             .map(|image_name| image_name.clone())
             .collect::<Vec<_>>();
         drop(old_images); // release lock to enable status beeing polled while images are downloading
