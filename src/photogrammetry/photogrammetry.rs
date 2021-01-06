@@ -12,6 +12,9 @@ use serde::{Serialize};
 use log::{info, warn};
 use std::error::Error;
 use crate::photogrammetry::paths;
+use crate::web_interface::model::NotificationHandle;
+
+pub type ConsoleOutput = Arc<Mutex<Vec<String>>>;
 
 #[derive(Serialize)]
 #[serde(tag = "type")]
@@ -22,7 +25,7 @@ enum Message {
 }
 
 impl Message {
-    fn into_json_string(self) -> String {
+    fn into_json(self) -> String {
         json!(self).to_string()
     }
 }
@@ -44,14 +47,16 @@ impl From<&str> for MessageBody {
     }
 }
 
-pub async fn start_photogrammetry(ws: Arc<std::sync::Mutex<Option<Addr<MyWs>>>>,
-                                  console_output: Arc<Mutex<Vec<String>>>,
+pub async fn start_photogrammetry(ws: NotificationHandle,
+                                  console_output: ConsoleOutput,
                                   mut shutdown_hook: oneshot::Receiver<()>) -> Result<(), Box<dyn Error + Send>> {
     // clear_local_folders().await?;
     let mut cmd = Command::new("python3");
 
     cmd.args(&["-u", "run.py", "ph"]);
     cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
+
 
     let mut child = cmd.spawn()
         .expect("failed to spawn command");
@@ -59,8 +64,12 @@ pub async fn start_photogrammetry(ws: Arc<std::sync::Mutex<Option<Addr<MyWs>>>>,
     let stdout = child.stdout.take()
         .expect("child did not have a handle to stdout");
 
-    let mut reader = BufReader::new(stdout).lines();
-    let (shutdown_process_tx, shutdown_process_rx) = oneshot::channel::<()>();
+    let stderr = child.stderr.take()
+        .expect("child did not have a handle to stderr");
+
+    let mut stdout_reader = BufReader::new(stdout).lines();
+    let mut stderr_reader = BufReader::new(stderr).lines();
+    let (mut shutdown_process_tx, shutdown_process_rx) = oneshot::channel::<()>();
     tokio::spawn(async move {
         tokio::select! {
             _ = child => {
@@ -73,28 +82,31 @@ pub async fn start_photogrammetry(ws: Arc<std::sync::Mutex<Option<Addr<MyWs>>>>,
     });
 
     tokio::spawn(async move {
-        while let Some(line) = match reader.next_line().await {
-            Ok(maybe_line) => { maybe_line }
-            Err(err) => { panic!(err) }
-        } {
-            println!("process output: {}", line);
-            console_output.lock().await.push(line.clone());
-            send_over_ws(Arc::clone(&ws), &Message::NewConsoleOutput(
-                line.into()
-            ).into_json_string()).await;
+        loop {
+            if !handle_potential_config_line(stdout_reader
+                                                 .next_line()
+                                                 .await
+                                                 .expect("unable to get next console line (stdout)"),
+                                             &ws,
+                                             &console_output,
+                                             &mut shutdown_process_tx).await
+                ||
+                !handle_potential_config_line(stderr_reader
+                                                  .next_line()
+                                                  .await
+                                                  .expect("unable to get next console line (stderr)"),
+                                              &ws,
+                                              &console_output,
+                                              &mut shutdown_process_tx).await {
+                break;
+            }
 
-            if shutdown_hook.try_recv() == Err(TryRecvError::Empty) {
-                // continue
-            } else {
-                info!("stopped photogrammetry process early");
-                send_over_ws(Arc::clone(&ws), &Message::Error("user stopped photogrammetry process".into()).into_json_string()).await;
-                if let Err(_err) = shutdown_process_tx.send(()) {
-                    warn!("photogrammetry process already dead");
-                }
+            if test_for_shutdown_message(&mut shutdown_hook) {
+                shutdown(&ws, &mut shutdown_process_tx).await;
                 break;
             }
         }
-        send_over_ws(Arc::clone(&ws), &Message::Finished.into_json_string()).await;
+        send_over_ws(Arc::clone(&ws), &Message::Finished.into_json()).await;
 
         tokio::task::spawn_blocking(zip_3d_model);
     });
@@ -102,7 +114,41 @@ pub async fn start_photogrammetry(ws: Arc<std::sync::Mutex<Option<Addr<MyWs>>>>,
     Ok(())
 }
 
-async fn send_over_ws(ws: Arc<std::sync::Mutex<Option<Addr<MyWs>>>>, msg: &str) {
+async fn handle_potential_config_line(potential_line: Option<String>,
+                                      ws: &NotificationHandle,
+                                      console_output: &ConsoleOutput,
+                                      shutdown_process_tx: &mut oneshot::Sender<()>) -> bool {
+    if let Some(line) = potential_line {
+        send_console_line(&ws, &console_output, &line).await;
+        true
+    } else {
+        shutdown(&ws, shutdown_process_tx).await;
+        false
+    }
+}
+
+async fn send_console_line(ws: &NotificationHandle, console_output: &ConsoleOutput, line: &str) {
+    println!("process output: {}", line);
+    console_output.lock().await.push(line.to_string());
+    send_over_ws(Arc::clone(&ws), &Message::NewConsoleOutput(line.into())
+        .into_json()).await;
+}
+
+fn test_for_shutdown_message(shut_rx: &mut oneshot::Receiver<()>) -> bool {
+    shut_rx.try_recv() == Err(TryRecvError::Empty)
+}
+
+async fn shutdown(ws: &NotificationHandle, shutdown_odm: &mut oneshot::Sender<()>) {
+    info!("stopped photogrammetry process early");
+    send_over_ws(ws.clone(), &Message::Error("user stopped photogrammetry process".into())
+        .into_json())
+        .await;
+    if let Err(_err) = shutdown_odm.send(()) {
+        warn!("photogrammetry process already dead");
+    }
+}
+
+async fn send_over_ws(ws: NotificationHandle, msg: &str) {
     let msg = msg.to_string();
     tokio::task::spawn_blocking(move || {
         if let Some(ws) = ws.lock().unwrap().as_mut() {

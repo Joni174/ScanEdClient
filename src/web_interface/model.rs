@@ -1,6 +1,11 @@
 use serde::{Deserialize, Serialize};
 use crate::server_com::com_model::ServerStatus;
 use std::error::Error;
+use std::sync::Arc;
+use actix::Addr;
+use crate::web_interface::model::ws::MyWs;
+
+pub type NotificationHandle = Arc<std::sync::Mutex<Option<Addr<MyWs>>>>;
 
 #[derive(Deserialize)]
 #[serde(tag = "type")]
