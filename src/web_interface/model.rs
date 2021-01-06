@@ -1,13 +1,6 @@
 use serde::{Deserialize, Serialize};
 use crate::server_com::com_model::ServerStatus;
-
-#[derive(Deserialize)]
-pub struct Auftrag {
-    input_runde1: String,
-    input_runde2: String,
-    input_runde3: String,
-    input_hostname: String,
-}
+use std::error::Error;
 
 #[derive(Deserialize)]
 #[serde(tag = "type")]
@@ -16,11 +9,20 @@ pub enum PageForm {
     None,
 }
 
+#[derive(Deserialize, Clone)]
+pub struct Auftrag {
+    input_runde1: String,
+    input_runde2: String,
+    input_runde3: String,
+    input_hostname: String,
+}
+
 impl Auftrag {
-    pub fn into_vec(self) -> Vec<i32> {
-        vec![self.input_runde1.parse::<i32>().unwrap(),
-             self.input_runde2.parse::<i32>().unwrap(),
-             self.input_runde3.parse::<i32>().unwrap()]
+    pub fn into_vec(self) -> Result<Vec<i32>, Box<dyn Error>> {
+        Ok(vec![
+            self.input_runde1.parse::<i32>().map_err(|err| -> Box<dyn Error> {err.into()})?,
+            self.input_runde2.parse::<i32>().map_err(|err| -> Box<dyn Error> {err.into()})?,
+            self.input_runde3.parse::<i32>().map_err(|err| -> Box<dyn Error> {err.into()})?])
     }
 
     pub fn get_url(&self) -> &String {
@@ -29,6 +31,7 @@ impl Auftrag {
 }
 
 #[derive(Serialize, Clone, PartialEq)]
+#[serde(tag = "type")]
 pub enum ImageAppStatus {
     Start,
     TakingImages(ServerStatus),

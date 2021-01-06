@@ -85,10 +85,18 @@ impl AppState for Start {
             );
         };
 
+        // parse form
+        let rounds = match auftrag.clone().into_vec() {
+            Ok(rounds) => rounds,
+            Err(err) => {
+                return (self, HttpResponse::InternalServerError().body(err.to_string()));
+            }
+        };
+
         // if initializing folder or post request to server fails return error
         let image_phase = match ImagePhase::new(
             auftrag.get_url().to_string(),
-            auftrag.into_vec()
+            rounds
         ).await {
             Ok(image_phase) => image_phase,
             Err(err) => {
@@ -106,11 +114,11 @@ impl AppState for Start {
         endpoint_not_found_in_phase("media_content", "Configuration")
     }
 
-    async fn get_specific_content(&self, name: &str) -> HttpResponse {
+    async fn get_specific_content(&self, _name: &str) -> HttpResponse {
         endpoint_not_found_in_phase("media_content/{content_name}", "Configuration")
     }
 
-    fn ws_notification(&self, req: HttpRequest, stream: web::Payload) -> HttpResponse {
+    fn ws_notification(&self, _req: HttpRequest, _stream: web::Payload) -> HttpResponse {
         endpoint_not_found_in_phase("ws_notification", "Configuration")
     }
 }
@@ -149,7 +157,7 @@ impl AppState for ImagePhase {
 
     async fn reset(self: Box<Self>) -> (Box<dyn AppState + Sync + Send>, HttpResponse) {
         self.image_downloader.reset().await;
-        (Box::new(Start {}), HttpResponse::Ok().finish())
+        (Box::new(Start {}), redirect_response("/"))
     }
 
     async fn post_page_form(self: Box<Self>, _page_form: PageForm) -> (Box<dyn AppState + Sync + Send>, HttpResponse) {
@@ -206,17 +214,17 @@ impl AppState for ImagePhase {
 }
 
 pub struct PhotogrammetryPhase {
-    console_output: Arc<Mutex<String>>,
+    console_output: Arc<Mutex<Vec<String>>>,
     new_status: Arc<Mutex<Option<Addr<MyWs>>>>,
-    cancel_handle: tokio::sync::oneshot::Sender<()>
+    shutdown_tx: tokio::sync::oneshot::Sender<()>
 }
 
 impl PhotogrammetryPhase {
     fn new(sender: tokio::sync::oneshot::Sender<()>) -> PhotogrammetryPhase {
         PhotogrammetryPhase {
-            console_output: Arc::new(Mutex::new(String::new())),
+            console_output: Arc::new(Mutex::new(Vec::new())),
             new_status: Arc::new(Mutex::new(None)),
-            cancel_handle: sender
+            shutdown_tx: sender
         }
     }
 }
@@ -230,20 +238,22 @@ impl AppState for PhotogrammetryPhase {
     async fn status(&self) -> HttpResponse {
         endpoint_not_found_in_phase("status", "PhotogrammetryPhase")
     }
-
+    
+    #[allow(unused_must_use)]
     async fn reset(self: Box<Self>) -> (Box<dyn AppState + Sync + Send>, HttpResponse) {
+        self.shutdown_tx.send(());
         (Box::new(Start {}), redirect_response("/"))
     }
 
-    async fn post_page_form(self: Box<Self>, page_form: PageForm) -> (Box<dyn AppState + Sync + Send>, HttpResponse) {
+    async fn post_page_form(self: Box<Self>, _page_form: PageForm) -> (Box<dyn AppState + Sync + Send>, HttpResponse) {
         (Box::new(ModelPhase {}), redirect_response("/"))
     }
 
     async fn get_content(&self) -> HttpResponse {
-        HttpResponse::Ok().body(self.console_output.lock().unwrap().deref())
+        HttpResponse::Ok().json(self.console_output.lock().unwrap().deref())
     }
 
-    async fn get_specific_content(&self, name: &str) -> HttpResponse {
+    async fn get_specific_content(&self, _name: &str) -> HttpResponse {
         endpoint_not_found_in_phase("/media_content/{content_name}", "PhotogrammetryPhase")
     }
 
@@ -262,30 +272,31 @@ pub struct ModelPhase {}
 #[async_trait]
 impl AppState for ModelPhase {
     async fn index(&self) -> HttpResponse {
-        unimplemented!()
+        render_page("html/model_page.html")
     }
 
     async fn status(&self) -> HttpResponse {
-        unimplemented!()
+        endpoint_not_found_in_phase("/status", "Model")
     }
 
     async fn reset(self: Box<Self>) -> (Box<dyn AppState + Sync + Send>, HttpResponse) {
-        unimplemented!()
+        (Box::new(Start{}), redirect_response("/"))
     }
 
-    async fn post_page_form(self: Box<Self>, page_form: PageForm) -> (Box<dyn AppState + Sync + Send>, HttpResponse) {
-        unimplemented!()
+    async fn post_page_form(self: Box<Self>, _page_form: PageForm) -> (Box<dyn AppState + Sync + Send>, HttpResponse) {
+        (self, endpoint_not_found_in_phase("/page_form(post)", "Model"))
     }
 
     async fn get_content(&self) -> HttpResponse {
-        unimplemented!()
+        //return 3d model as zip
+        HttpResponse::Ok().finish()
     }
 
-    async fn get_specific_content(&self, name: &str) -> HttpResponse {
-        unimplemented!()
+    async fn get_specific_content(&self, _name: &str) -> HttpResponse {
+        endpoint_not_found_in_phase("/media_content/{content_id}", "Model")
     }
 
-    fn ws_notification(&self, req: HttpRequest, stream: Payload) -> HttpResponse {
-        unimplemented!()
+    fn ws_notification(&self, _req: HttpRequest, _stream: Payload) -> HttpResponse {
+        endpoint_not_found_in_phase("/ws_notification", "Model")
     }
 }

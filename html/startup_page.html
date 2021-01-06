@@ -21,7 +21,7 @@
         <div class="row">
             <div class="col">
                 <h1>Auftrag</h1>
-                <form class="container" onsubmit="submit_form()" id="auftrag" method="POST" action="/page_form">
+                <form class="container" id="auftrag" method="POST" action="/page_form">
                     <div class="row">
                         <div class="col"><label for="input_runde1">Runde 1</label></div>
                         <div class="col"><input name="input_runde1" id="input_runde1" type="number"></div>
@@ -51,15 +51,14 @@
 <script type="text/javascript">
     var url = "";
 
-    function submit_form() {
+    document.getElementById("auftrag").onsubmit = function submit_form(e) {
         console.log("p");
         const no_url = url === "";
         if (no_url) {
             alert("Hostname und Port muss gesetzt werden!")
+            e.preventDefault()
         }
-        document.getElementsByTagName("img")[0].setAttribute("src", "");
         clear_stream_fill_in_hostname();
-        return !no_url
     }
 
 
@@ -69,6 +68,8 @@
         hostname_input.setAttribute("type", "text");
         hostname_input.setAttribute("name", "input_hostname");
         hostname_input.setAttribute("value", url);
+        document.getElementsByTagName("img")[0].setAttribute("src", "");
+
         form.appendChild(hostname_input);
     }
 

@@ -63,16 +63,18 @@ async fn read_image(name: &str) -> tokio::io::Result<Vec<u8>> {
 }
 
 async fn init_dir() -> tokio::io::Result<()> {
-    if image_folder().exists() {
-        tokio::fs::remove_dir_all(image_folder()).await?;
+    if parent_folder().exists() {
+        tokio::fs::remove_dir_all(parent_folder()).await?;
     }
-    tokio::fs::create_dir(image_folder()).await?;
+    tokio::fs::create_dir_all(image_folder()).await?;
     Ok(())
 }
 
-fn image_folder() -> PathBuf {
-    PathBuf::from_str("images").unwrap()
-}
+fn image_folder() -> PathBuf { parent_folder().join("images") }
+
+//change for docker
+fn parent_folder() -> PathBuf { PathBuf::from_str("/ph").unwrap() }
+
 
 pub const POLL_DELAY: u64 = 3; // in seconds
 
@@ -173,7 +175,7 @@ impl ImageDownloader {
         self.image_store.get_image_list().await
     }
 
-    pub async fn get_image(&self, image_name: &String) ->  Result<Vec<u8>, Option<tokio::io::Error>> {
+    pub async fn get_image(&self, image_name: &String) -> Result<Vec<u8>, Option<tokio::io::Error>> {
         self.image_store.get_image(image_name).await
     }
 }

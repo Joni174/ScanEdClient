@@ -1,6 +1,11 @@
 <div class="container">
     <div class="row">
-        <div id="console-output" class="col" style="height: 200px; overflow: scroll">
+        <div id="console-output" class="col" style="height: 500px; overflow: scroll; font-family: monospace; color: white; background-color: black">
+        </div>
+    </div>
+    <div class="row">
+        <div class="col">
+            <button onclick="reset()">Reset</button>
         </div>
     </div>
 </div>
@@ -8,10 +13,39 @@
 <script type="text/javascript">
     fetch('/media_content')
         .then(response => response.json())
-        .then(data => document.getElementById('console-output').innerHTML = data);
+        .then(data => {
+            for (var line of data) {
+                document.getElementById('console-output').innerHTML += line + "<br>"
+            }
+        })
 
-    webSocket = new WebSocket("ws://localhost:8080/")
+    /*
+    * enum Message {
+    *     NewConsoleOutput(MessageBody),
+    *     Error(MessageBody),
+    *     Finished,
+    * }
+    * */
+
+    webSocket = new WebSocket("ws://localhost:8080/ws_notification")
     webSocket.onmessage = function (event) {
-        document.getElementById('console-output').innerHTML = event.data
+        const message = event.data
+        var line_text = ""
+        if (message.type === "NewConsoleMessage") {
+            line_text = message.body
+        } else if (message.type === "Error") {
+            line_text = "<span style='color:red'>"+message.body+"</span>"
+        } else if (message.type === "Finished") {
+            line_text = "<span style='color:green'>"+"Photogrammetry Abgeschlossen"+"</span>"
+        } else {
+            line_text = "<span style='color:red'>"+"inavid message type"+"</span>"
+        }
+        document.getElementById('console-output').innerHTML += line_text + "<br>"
+    }
+
+    function reset() {
+        fetch("/", {
+            method: "delete"
+        }).then(res => alert(res.status)).then(_ => location.reload())
     }
 </script>

@@ -74,15 +74,6 @@ mod endpoints {
         let app_state = data.app_state.lock().await;
         app_state.as_ref().unwrap().ws_notification(req, stream).await
     }
-
-    #[get("/0_0.jpeg")]
-    pub async fn image() -> impl Responder {
-        let img = tokio::fs::read("0_0.jpg").await.unwrap();
-        HttpResponse::Ok()
-            .header("Content-Type", "image/jpeg")
-            .header("Content-Length", img.len().to_string())
-            .body(img)
-    }
 }
 
 struct AppData {
@@ -107,8 +98,8 @@ async fn main() {
             .service(endpoints::post_page_form)
             .service(endpoints::get_media_content)
             .service(endpoints::get_specific_media_content)
-            .service(endpoints::image)
             .service(endpoints::ws_notification)
+            .service(endpoints::reset)
             .app_data(app_data.clone())
     }).bind(SocketAddr::from_str("0.0.0.0:8080").unwrap())
         .unwrap()

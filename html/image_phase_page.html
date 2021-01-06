@@ -8,7 +8,20 @@
     <div class="row">
         <div class="col">
             <h1>Letzte Aufnahme</h1>
-            <div style="height: 400px; overflow: scroll" id="aufnahmen"></div>
+            <div style="max-height: 400px; overflow: auto" id="aufnahmen"></div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col">
+            <form method="post" action="/page_form">
+                <input type="hidden" name="type" value="None">
+                <input type="submit" value="Start Photogrammetry">
+            </form>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col">
+            <button onclick="reset()">Reset</button>
         </div>
     </div>
 </div>
@@ -26,11 +39,30 @@
         get_and_set_status()
     }
 
+    function reset() {
+        fetch("/", {
+            method: "delete"
+        }).then(res => alert(res.status)).then(_ => location.reload())
+    }
+
     function get_and_set_status() {
         fetch("/status")
             .then(response => response.json())
-            .then(status => document.getElementById("status")
-                .innerHTML = status)
+            .then(function f(status) {
+                console.log("status: ")
+                console.log(status)
+                var display_status;
+                if (status.type === "Finished") {
+                    display_status = "Alle Aufnahmen wurden heruntergeladen."
+                } else if (status.type === "TakingImages") {
+                    display_status = "Status: " + "Runde: " + status.runde + ", Aufnahme: " + status.aufnahme;
+                } else if (status.type === "Start") {
+                    display_status = "Starting"
+                } else {
+                    display_status = "invalid type"
+                }
+                document.getElementById("status").innerHTML = display_status
+            });
     }
 
     async function get_image_list() {
