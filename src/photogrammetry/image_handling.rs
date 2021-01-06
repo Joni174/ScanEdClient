@@ -1,5 +1,3 @@
-use std::path::{PathBuf};
-use std::str::FromStr;
 use tokio::fs::{File};
 use tokio::io::{AsyncWriteExt, AsyncReadExt};
 use std::collections::HashSet;
@@ -14,7 +12,8 @@ use crate::web_interface::model::ws::{MyWs, Notification};
 use actix::Addr;
 use crate::server_com::com_model;
 use actix_web::rt::time::delay_for;
-use log::{info};
+use log::{info, error};
+use crate::photogrammetry::paths;
 
 pub struct ImageStore {
     image_list: Mutex<HashSet<String>>,
@@ -50,33 +49,25 @@ impl ImageStore {
 }
 
 async fn save_image(name: &str, img: &Vec<u8>) -> Result<(), tokio::io::Error> {
-    let mut file = File::create(image_folder().join(name)).await?;
+    let mut file = File::create(paths::image_folder().join(name)).await?;
     file.write_all(img).await?;
     Ok(())
 }
 
 async fn read_image(name: &str) -> tokio::io::Result<Vec<u8>> {
-    let mut file = File::open(image_folder().join(name)).await?;
+    let mut file = File::open(paths::image_folder().join(name)).await?;
     let mut buf = Vec::new();
     file.read_to_end(&mut buf).await?;
     Ok(buf)
 }
 
 async fn init_dir() -> tokio::io::Result<()> {
-    if parent_folder().exists() {
-        tokio::fs::remove_dir_all(parent_folder()).await?;
+    if paths::parent_folder().exists() {
+        tokio::fs::remove_dir_all(paths::parent_folder()).await?;
     }
-    tokio::fs::create_dir_all(image_folder()).await?;
+    tokio::fs::create_dir_all(paths::image_folder()).await?;
     Ok(())
 }
-
-fn image_folder() -> PathBuf { parent_folder().join("images") }
-
-//change for docker
-fn parent_folder() -> PathBuf { PathBuf::from_str("/ph").unwrap() }
-
-// fn texture_folder() -> PathBuf {PathBuf::from_str("")}
-
 
 pub const POLL_DELAY: u64 = 3; // in seconds
 
@@ -84,7 +75,7 @@ pub struct ImageDownloader {
     url: String,
     target_server_status: com_model::ServerStatus,
     notification_handle: Arc<std::sync::Mutex<Option<Addr<MyWs>>>>,
-    image_store: ImageStore,
+    image_store: Arc<ImageStore>,
     app_image_status: Arc<Mutex<ImageAppStatus>>,
     reset: Mutex<bool>,
 }
@@ -97,7 +88,10 @@ impl ImageDownloader {
             url,
             target_server_status,
             notification_handle,
-            image_store: ImageStore::new().await.map_err(|err| -> Box<dyn Error + Send> { Box::new(err) })?,
+            image_store: Arc::new(
+                ImageStore::new()
+                    .await
+                    .map_err(|err| -> Box<dyn Error + Send> { Box::new(err)})?),
             app_image_status: Arc::new(Mutex::new(ImageAppStatus::Start)),
             reset: Mutex::new(false),
         })
@@ -115,31 +109,44 @@ impl ImageDownloader {
                 if let Some(new_status) = self.get_new_status().await.expect("failed to get status") {
                     *self.app_image_status.lock().await = new_status;
                     self.download_images().await.expect("failed to download images");
-                    self.notifie_ws();
+                    self.notifie_ws().await;
                 }
                 delay_for(tokio::time::Duration::from_secs(POLL_DELAY)).await;
             };
         });
     }
 
-    async fn download_images(&self) -> Result<(), Box<dyn Error + Send>> {
+    async fn get_new_image_paths(&self) -> Result<Vec<String>, Box<dyn Error + Send>> {
         let available_images = server_com::get_ready_image_list(&self.url).await
             .map_err(|err| -> Box<dyn Error + Send> { Box::new(err) })?;
-
         let old_images = self.image_store.image_list.lock().await;
-        let new_images = available_images
+        Ok(available_images
             .difference(&HashSet::from_iter(old_images.iter().map(|image_name| format!("/aufnahme/{}", image_name))))
             .map(|image_name| image_name.clone())
-            .collect::<Vec<_>>();
-        drop(old_images); // release lock to enable status beeing polled while images are downloading
-        for image_path in new_images {
-            //downlaod aufnahme from server
-            let image = server_com::get_aufnahme(&self.url, &image_path).await
-                .map_err(|err| -> Box<dyn Error + Send> { Box::new(err) })?;
+            .collect::<Vec<_>>())
+    }
 
-            // save aufname locally
-            self.image_store.store_image(&image_path, &image).await
-                .map_err(|err| -> Box<dyn Error + Send> { Box::new(err) })?;
+    async fn download_images(&self) -> Result<(), Box<dyn Error + Send>> {
+        let new_images = self.get_new_image_paths().await?;
+        for image_path in new_images {
+            let url = self.url.clone();
+            let image_store = Arc::clone(&self.image_store);
+            tokio::spawn(async move {
+                //downlaod aufnahme from server
+                let image = match server_com::get_aufnahme(&url, &image_path).await {
+                    Ok(image) => image,
+                    Err(err) => {
+                        error!("Error downloading image: {}", err);
+                        return;
+                    },
+                };
+
+
+                // save aufname locally
+                if let Err(err) = image_store.store_image(&image_path, &image).await {
+                    error!("Error downloading image: {}", err);
+                };
+            });
         }
         Ok(())
     }
@@ -160,13 +167,18 @@ impl ImageDownloader {
         }
     }
 
-    fn notifie_ws(&self) {
-        let notification_handle_option = self.notification_handle.lock().unwrap();
-        if let Some(notification_handle) = notification_handle_option.deref() {
-            notification_handle.do_send(Notification("new image".to_string()));
-        } else {
-            info!("websocket not available update message was therefore not send")
-        }
+    async fn notifie_ws(&self) {
+        let notification_handle = Arc::clone(&self.notification_handle);
+        tokio::task::spawn_blocking(move || {
+            let notification_handle_option = notification_handle
+                .lock()
+                .unwrap();
+            if let Some(notification_handle) = notification_handle_option.deref() {
+                notification_handle.do_send(Notification("new image".to_string()));
+            } else {
+                info!("websocket not available update message was therefore not send")
+            }
+        });
     }
 
     pub(crate) async fn reset(&self) {

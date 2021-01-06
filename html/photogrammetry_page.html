@@ -29,9 +29,9 @@
 
     webSocket = new WebSocket("ws://localhost:8080/ws_notification")
     webSocket.onmessage = function (event) {
-        const message = event.data
+        const message = JSON.parse(event.data)
         var line_text = ""
-        if (message.type === "NewConsoleMessage") {
+        if (message.type === "NewConsoleOutput") {
             line_text = message.body
         } else if (message.type === "Error") {
             line_text = "<span style='color:red'>"+message.body+"</span>"
@@ -41,11 +41,28 @@
             line_text = "<span style='color:red'>"+"inavid message type"+"</span>"
         }
         document.getElementById('console-output').innerHTML += line_text + "<br>"
+
+        if (lock_scroll_bottom) {
+            scroll_bottom()
+        }
     }
 
     function reset() {
         fetch("/", {
             method: "delete"
         }).then(res => alert(res.status)).then(_ => location.reload())
+    }
+
+    var lock_scroll_bottom = true;
+    const console_output = $('#console-output')
+    console_output.scroll(function() {
+                lock_scroll_bottom = false;
+        if(console_output.scrollTop() + console_output.height() > console_output.prop("scrollHeight") - 10) {
+            lock_scroll_bottom = true;
+        }
+    });
+
+    function scroll_bottom () {
+        console_output.scrollTop(console_output.prop("scrollHeight"));
     }
 </script>

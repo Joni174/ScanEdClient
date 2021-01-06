@@ -100,6 +100,7 @@ async fn main() {
             .service(endpoints::get_specific_media_content)
             .service(endpoints::ws_notification)
             .service(endpoints::reset)
+            .service(actix_files::Files::new("/static", "html/static"))
             .app_data(app_data.clone())
     }).bind(SocketAddr::from_str("0.0.0.0:8080").unwrap())
         .unwrap()

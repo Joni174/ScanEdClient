@@ -14,6 +14,7 @@ use crate::photogrammetry::photogrammetry::start_photogrammetry;
 use serde::Serialize;
 use std::error::Error;
 use crate::server_com;
+use log::{warn};
 
 mod constants {
     pub const CONTENT: &'static str = "media_content";
@@ -124,7 +125,7 @@ impl AppState for Start {
 }
 
 pub struct ImagePhase {
-    new_status_notifier: Arc<Mutex<Option<Addr<MyWs>>>>,
+    new_status_notifier: Arc<std::sync::Mutex<Option<Addr<MyWs>>>>,
     image_downloader: Arc<ImageDownloader>,
 }
 
@@ -214,7 +215,7 @@ impl AppState for ImagePhase {
 }
 
 pub struct PhotogrammetryPhase {
-    console_output: Arc<Mutex<Vec<String>>>,
+    console_output: Arc<tokio::sync::Mutex<Vec<String>>>,
     new_status: Arc<Mutex<Option<Addr<MyWs>>>>,
     shutdown_tx: tokio::sync::oneshot::Sender<()>
 }
@@ -222,7 +223,7 @@ pub struct PhotogrammetryPhase {
 impl PhotogrammetryPhase {
     fn new(sender: tokio::sync::oneshot::Sender<()>) -> PhotogrammetryPhase {
         PhotogrammetryPhase {
-            console_output: Arc::new(Mutex::new(Vec::new())),
+            console_output: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             new_status: Arc::new(Mutex::new(None)),
             shutdown_tx: sender
         }
@@ -241,7 +242,9 @@ impl AppState for PhotogrammetryPhase {
     
     #[allow(unused_must_use)]
     async fn reset(self: Box<Self>) -> (Box<dyn AppState + Sync + Send>, HttpResponse) {
-        self.shutdown_tx.send(());
+        if let Err(_err) = self.shutdown_tx.send(()) {
+            warn!("photogrammetry process already dead");
+        }
         (Box::new(Start {}), redirect_response("/"))
     }
 
@@ -250,7 +253,8 @@ impl AppState for PhotogrammetryPhase {
     }
 
     async fn get_content(&self) -> HttpResponse {
-        HttpResponse::Ok().json(self.console_output.lock().unwrap().deref())
+        let body = self.console_output.lock().await.deref().clone();
+        HttpResponse::Ok().json(body)
     }
 
     async fn get_specific_content(&self, _name: &str) -> HttpResponse {
@@ -289,7 +293,17 @@ impl AppState for ModelPhase {
 
     async fn get_content(&self) -> HttpResponse {
         //return 3d model as zip
-        HttpResponse::Ok().finish()
+        match tokio::fs::read("/model.zip").await {
+            Ok(file) => {
+                HttpResponse::Ok()
+                    .header("Content-Type", "application/octet-stream")
+                    .body(file)
+            },
+            Err (err) => {
+                HttpResponse::InternalServerError().body(err.to_string())
+            }
+        }
+
     }
 
     async fn get_specific_content(&self, _name: &str) -> HttpResponse {
