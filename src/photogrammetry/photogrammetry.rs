@@ -8,6 +8,7 @@ use serde::Serialize;
 use serde_json::json;
 use actix::Addr;
 use std::error::Error;
+use std::fs::File;
 
 #[derive(Serialize)]
 #[serde(tag = "type")]
@@ -102,5 +103,15 @@ fn send_over_ws(ws: &Arc<Mutex<Option<Addr<MyWs>>>>, msg: &String) {
     if let Some(ws) = ws.lock().unwrap().as_mut() {
         ws.do_send(Notification(msg.clone()))
     }
+}
+
+fn zip_3d_model() {
+    use zip::ZipWriter;
+    use zip_extensions::write::ZipWriterExtensions;
+
+
+    let file = File::create(archive_file).unwrap();
+    let mut zip = ZipWriter::new(file);
+    zip.create_from_directory(&source_path).unwrap()
 }
 

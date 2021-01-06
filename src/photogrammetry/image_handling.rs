@@ -75,6 +75,8 @@ fn image_folder() -> PathBuf { parent_folder().join("images") }
 //change for docker
 fn parent_folder() -> PathBuf { PathBuf::from_str("/ph").unwrap() }
 
+// fn texture_folder() -> PathBuf {PathBuf::from_str("")}
+
 
 pub const POLL_DELAY: u64 = 3; // in seconds
 
