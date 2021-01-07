@@ -1,5 +1,5 @@
 use actix_web::{HttpResponse, HttpRequest, web};
-use crate::web_interface::model::{PageForm};
+use crate::web_interface::model::{PageForm, NotificationHandle};
 use std::fs;
 use std::sync::{Arc, Mutex};
 use actix_web_actors::ws;
@@ -40,7 +40,7 @@ fn render_master_page(html: String) -> String {
     let mut tt = tinytemplate::TinyTemplate::new();
     let master_template = std::fs::read_to_string("html/master.html").unwrap();
     tt.add_template("master", &master_template).unwrap();
-    tt.render("master", &MasterTemplateContext{page_content: html}).unwrap()
+    tt.render("master", &MasterTemplateContext { page_content: html }).unwrap()
 }
 
 fn render_page(path: &str) -> HttpResponse {
@@ -97,7 +97,7 @@ impl AppState for Start {
         // if initializing folder or post request to server fails return error
         let image_phase = match ImagePhase::new(
             auftrag.get_url().to_string(),
-            rounds
+            rounds,
         ).await {
             Ok(image_phase) => image_phase,
             Err(err) => {
@@ -140,7 +140,7 @@ impl ImagePhase {
         Arc::clone(&image_downloader).start().await;
         Ok(ImagePhase {
             new_status_notifier,
-            image_downloader
+            image_downloader,
         })
     }
 }
@@ -164,14 +164,15 @@ impl AppState for ImagePhase {
     async fn post_page_form(self: Box<Self>, _page_form: PageForm) -> (Box<dyn AppState + Sync + Send>, HttpResponse) {
         let (sender, receiver) = tokio::sync::oneshot::channel::<()>();
         let photogrammetry_phase = PhotogrammetryPhase::new(sender);
-        match start_photogrammetry(
+        start_photogrammetry(
             Arc::clone(&photogrammetry_phase.new_status),
             Arc::clone(&photogrammetry_phase.console_output),
-            receiver
-        ).await {
-            Ok(_) => {(Box::new(photogrammetry_phase), redirect_response("/"))},
-            Err(err) => {(self, HttpResponse::InternalServerError().body(err.to_string()))}
-        }
+            receiver,
+        ).await;
+        (Box::new(photogrammetry_phase), redirect_response("/"))
+        // {
+        //     Ok(_) => {(Box::new(photogrammetry_phase), redirect_response("/"))},
+        //     Err(err) => {(self, HttpResponse::InternalServerError().body(err.to_string()))}
     }
 
     async fn get_content(&self) -> HttpResponse {
@@ -215,9 +216,9 @@ impl AppState for ImagePhase {
 }
 
 pub struct PhotogrammetryPhase {
-    console_output: Arc<tokio::sync::Mutex<Vec<String>>>,
-    new_status: Arc<Mutex<Option<Addr<MyWs>>>>,
-    shutdown_tx: tokio::sync::oneshot::Sender<()>
+    console_output: Arc<tokio::sync::Mutex<Vec<serde_json::Value>>>,
+    new_status: NotificationHandle,
+    shutdown_tx: tokio::sync::oneshot::Sender<()>,
 }
 
 impl PhotogrammetryPhase {
@@ -225,7 +226,7 @@ impl PhotogrammetryPhase {
         PhotogrammetryPhase {
             console_output: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             new_status: Arc::new(Mutex::new(None)),
-            shutdown_tx: sender
+            shutdown_tx: sender,
         }
     }
 }
@@ -239,7 +240,7 @@ impl AppState for PhotogrammetryPhase {
     async fn status(&self) -> HttpResponse {
         endpoint_not_found_in_phase("status", "PhotogrammetryPhase")
     }
-    
+
     #[allow(unused_must_use)]
     async fn reset(self: Box<Self>) -> (Box<dyn AppState + Sync + Send>, HttpResponse) {
         if let Err(_err) = self.shutdown_tx.send(()) {
@@ -253,7 +254,10 @@ impl AppState for PhotogrammetryPhase {
     }
 
     async fn get_content(&self) -> HttpResponse {
+        log::error!("get_content_lock");
         let body = self.console_output.lock().await.deref().clone();
+        log::error!("release_content_lock");
+
         HttpResponse::Ok().json(body)
     }
 
@@ -284,7 +288,7 @@ impl AppState for ModelPhase {
     }
 
     async fn reset(self: Box<Self>) -> (Box<dyn AppState + Sync + Send>, HttpResponse) {
-        (Box::new(Start{}), redirect_response("/"))
+        (Box::new(Start {}), redirect_response("/"))
     }
 
     async fn post_page_form(self: Box<Self>, _page_form: PageForm) -> (Box<dyn AppState + Sync + Send>, HttpResponse) {
@@ -298,12 +302,11 @@ impl AppState for ModelPhase {
                 HttpResponse::Ok()
                     .header("Content-Type", "application/octet-stream")
                     .body(file)
-            },
-            Err (err) => {
+            }
+            Err(err) => {
                 HttpResponse::InternalServerError().body(err.to_string())
             }
         }
-
     }
 
     async fn get_specific_content(&self, _name: &str) -> HttpResponse {

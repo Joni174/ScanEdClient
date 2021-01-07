@@ -1,5 +1,5 @@
-from time import sleep;
+from time import sleep
 
-for i in range(100):
+for i in range(15):
     print(f"long text with number: {i}")
     sleep(1)

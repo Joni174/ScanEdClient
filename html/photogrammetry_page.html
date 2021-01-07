@@ -5,6 +5,14 @@
     </div>
     <div class="row">
         <div class="col">
+            <form method="post" action="/page_form">
+                <input type="hidden" name="type" value="None">
+                <input type="submit" value="View Photogrammetry">
+            </form>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col">
             <button onclick="reset()">Reset</button>
         </div>
     </div>
@@ -15,7 +23,7 @@
         .then(response => response.json())
         .then(data => {
             for (var line of data) {
-                document.getElementById('console-output').innerHTML += line + "<br>"
+                document.getElementById('console-output').innerHTML += parse_ws_message(line) + "<br>"
             }
         })
 
@@ -27,19 +35,25 @@
     * }
     * */
 
-    webSocket = new WebSocket("ws://localhost:8080/ws_notification")
-    webSocket.onmessage = function (event) {
-        const message = JSON.parse(event.data)
+    function parse_ws_message(message) {
         var line_text = ""
         if (message.type === "NewConsoleOutput") {
             line_text = message.body
         } else if (message.type === "Error") {
-            line_text = "<span style='color:red'>"+message.body+"</span>"
+            line_text = "<span style='color:red'>" + message.body + "</span>"
         } else if (message.type === "Finished") {
-            line_text = "<span style='color:green'>"+"Photogrammetry Abgeschlossen"+"</span>"
+            line_text = "<span style='color:green'>" + "Photogrammetrie Abgeschlossen" + "</span>"
         } else {
-            line_text = "<span style='color:red'>"+"inavid message type"+"</span>"
+            line_text = "<span style='color:red'>" + "inavid message type" + "</span>"
         }
+        return line_text;
+    }
+
+    webSocket = new WebSocket("ws://localhost:8080/ws_notification")
+
+    webSocket.onmessage = function (event) {
+        const message = JSON.parse(event.data)
+        var line_text = parse_ws_message(message);
         document.getElementById('console-output').innerHTML += line_text + "<br>"
 
         if (lock_scroll_bottom) {

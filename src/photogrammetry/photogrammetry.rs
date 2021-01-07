@@ -1,22 +1,23 @@
 use std::sync::{Arc};
-use actix::{Addr};
-use crate::web_interface::model::ws::{MyWs, Notification};
+use crate::web_interface::model::ws::{Notification};
 use tokio::sync::{oneshot, Mutex};
-use tokio::process::Command;
+use tokio::process::{Command, ChildStdout, ChildStderr};
 use std::process::Stdio;
-use tokio::io::{BufReader, AsyncBufReadExt};
+use tokio::io::{BufReader, AsyncBufReadExt, Lines};
 use std::fs::File;
-use tokio::sync::oneshot::error::TryRecvError;
 use serde_json::json;
 use serde::{Serialize};
-use log::{info, warn};
-use std::error::Error;
+use log::{info, warn, error, debug};
 use crate::photogrammetry::paths;
 use crate::web_interface::model::NotificationHandle;
+use tokio::io;
+use crate::photogrammetry::photogrammetry::Message::{NewConsoleOutput, Finished};
+use tokio::task::JoinHandle;
+use std::ops::Deref;
 
-pub type ConsoleOutput = Arc<Mutex<Vec<String>>>;
+pub type ConsoleOutput = Arc<Mutex<Vec<serde_json::Value>>>;
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 #[serde(tag = "type")]
 enum Message {
     NewConsoleOutput(MessageBody),
@@ -30,7 +31,7 @@ impl Message {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 struct MessageBody {
     body: String
 }
@@ -47,16 +48,37 @@ impl From<&str> for MessageBody {
     }
 }
 
-pub async fn start_photogrammetry(ws: NotificationHandle,
-                                  console_output: ConsoleOutput,
-                                  mut shutdown_hook: oneshot::Receiver<()>) -> Result<(), Box<dyn Error + Send>> {
-    // clear_local_folders().await?;
-    let mut cmd = Command::new("python3");
+struct ConsoleReader {
+    stdout_reader: Lines<BufReader<ChildStdout>>,
+    stderr_reader: Lines<BufReader<ChildStderr>>,
+}
 
+impl ConsoleReader {
+    fn new(stdout: ChildStdout, stderr: ChildStderr) -> ConsoleReader {
+        let stdout_reader = BufReader::new(stdout).lines();
+        let stderr_reader = BufReader::new(stderr).lines();
+        ConsoleReader { stdout_reader, stderr_reader }
+    }
+
+    async fn next_line(&mut self) -> io::Result<Option<String>> {
+        tokio::select! {
+            stdout_res = self.stdout_reader.next_line() => {
+                stdout_res
+            },
+            stderr_res = self.stderr_reader.next_line() => {
+                stderr_res
+            }
+        }
+    }
+}
+
+async fn start_process(
+    shutdown_hook: oneshot::Receiver<()>
+) -> (ConsoleReader, JoinHandle<()>) {
+    let mut cmd = Command::new("python3");
     cmd.args(&["-u", "run.py", "ph"]);
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
-
 
     let mut child = cmd.spawn()
         .expect("failed to spawn command");
@@ -67,92 +89,70 @@ pub async fn start_photogrammetry(ws: NotificationHandle,
     let stderr = child.stderr.take()
         .expect("child did not have a handle to stderr");
 
-    let mut stdout_reader = BufReader::new(stdout).lines();
-    let mut stderr_reader = BufReader::new(stderr).lines();
-    let (mut shutdown_process_tx, shutdown_process_rx) = oneshot::channel::<()>();
-    tokio::spawn(async move {
+    let join_handle = tokio::spawn(async move {
         tokio::select! {
             _ = child => {
                 info!("photogrammetry process finished");
             }
-            _ = shutdown_process_rx => {
+            _ = shutdown_hook => {
                 warn!("user canceled photogrammetry process");
             }
         }
     });
 
+    (ConsoleReader::new(stdout, stderr), join_handle)
+}
+
+pub async fn start_photogrammetry(ws: NotificationHandle,
+                                  console_output: ConsoleOutput,
+                                  shutdown_process_rx: oneshot::Receiver<()>) -> JoinHandle<()> {
     tokio::spawn(async move {
-        loop {
-            if !handle_potential_config_line(stdout_reader
-                                                 .next_line()
-                                                 .await
-                                                 .expect("unable to get next console line (stdout)"),
-                                             &ws,
-                                             &console_output,
-                                             &mut shutdown_process_tx).await
-                ||
-                !handle_potential_config_line(stderr_reader
-                                                  .next_line()
-                                                  .await
-                                                  .expect("unable to get next console line (stderr)"),
-                                              &ws,
-                                              &console_output,
-                                              &mut shutdown_process_tx).await {
+    let (mut console_reader, process_join_handle) =
+        start_process(shutdown_process_rx).await;
+    loop {
+        let line = match console_reader.next_line().await {
+            Ok(line) => { line }
+            Err(err) => {
+                error!("Error occurred when reading line from console: {}", err);
                 break;
             }
+        };
 
-            if test_for_shutdown_message(&mut shutdown_hook) {
-                shutdown(&ws, &mut shutdown_process_tx).await;
+        match line {
+            None => {
+                // console pipe closed
                 break;
+            }
+            Some(line) => {
+                let new_console_output = NewConsoleOutput(line.into());
+                debug!("console-line: {}", new_console_output.clone().into_json());
+                send_over_ws(ws.clone(), &new_console_output.clone().into_json()).await;
+                console_output.lock().await.push(json!(new_console_output));
             }
         }
-        send_over_ws(Arc::clone(&ws), &Message::Finished.into_json()).await;
+    }
+    send_over_ws(ws.clone(), &Finished.into_json()).await;
+    console_output.lock().await.push(json!(Finished));
 
-        tokio::task::spawn_blocking(zip_3d_model);
+    tokio::spawn(async move {
+        if let Err(err) = process_join_handle.await {
+            let error_msg = format!("OpenDroneMap Process exited with error: {}", err);
+            error!("{}", error_msg);
+            send_over_ws(ws.clone(), &Message::Error(error_msg.into()).into_json()).await;
+        }
+        tokio::task::spawn_blocking(zip_3d_model)
     });
-
-    Ok(())
-}
-
-async fn handle_potential_config_line(potential_line: Option<String>,
-                                      ws: &NotificationHandle,
-                                      console_output: &ConsoleOutput,
-                                      shutdown_process_tx: &mut oneshot::Sender<()>) -> bool {
-    if let Some(line) = potential_line {
-        send_console_line(&ws, &console_output, &line).await;
-        true
-    } else {
-        shutdown(&ws, shutdown_process_tx).await;
-        false
-    }
-}
-
-async fn send_console_line(ws: &NotificationHandle, console_output: &ConsoleOutput, line: &str) {
-    println!("process output: {}", line);
-    console_output.lock().await.push(line.to_string());
-    send_over_ws(Arc::clone(&ws), &Message::NewConsoleOutput(line.into())
-        .into_json()).await;
-}
-
-fn test_for_shutdown_message(shut_rx: &mut oneshot::Receiver<()>) -> bool {
-    shut_rx.try_recv() == Err(TryRecvError::Empty)
-}
-
-async fn shutdown(ws: &NotificationHandle, shutdown_odm: &mut oneshot::Sender<()>) {
-    info!("stopped photogrammetry process early");
-    send_over_ws(ws.clone(), &Message::Error("user stopped photogrammetry process".into())
-        .into_json())
-        .await;
-    if let Err(_err) = shutdown_odm.send(()) {
-        warn!("photogrammetry process already dead");
-    }
+    })
 }
 
 async fn send_over_ws(ws: NotificationHandle, msg: &str) {
     let msg = msg.to_string();
     tokio::task::spawn_blocking(move || {
-        if let Some(ws) = ws.lock().unwrap().as_mut() {
-            ws.do_send(Notification(msg.to_string()))
+        let notification_handle = ws.lock().unwrap();
+        if let Some(ws) = notification_handle.deref() {
+            ws.do_send(Notification(msg))
+        } else {
+            warn!("no websocket addr available");
         }
     });
 }
@@ -165,5 +165,3 @@ fn zip_3d_model() {
     let mut zip = ZipWriter::new(file);
     zip.create_from_directory(&paths::texture_folder()).unwrap()
 }
-
-
