@@ -52,10 +52,11 @@ pub async fn start_photogrammetry(ws: NotificationHandle,
                                   mut shutdown_hook: oneshot::Receiver<()>) -> Result<(), Box<dyn Error + Send>> {
     // clear_local_folders().await?;
     let mut cmd = Command::new("python3");
-
+    let out = Stdio::piped();
+    let p = Stdio::from(out);
     cmd.args(&["-u", "run.py", "ph"]);
-    cmd.stdout(Stdio::piped());
-    cmd.stderr(Stdio::piped());
+    cmd.stdout();
+    cmd.stderr(pipe);
 
 
     let mut child = cmd.spawn()
