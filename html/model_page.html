@@ -16,4 +16,9 @@
     </div>
 </div>
 <script type="text/javascript">
+    function reset() {
+        fetch("/", {
+            method: "delete"
+        }).then(res => alert(res.status)).then(_ => location.reload())
+    }
 </script>
