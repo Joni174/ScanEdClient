@@ -1,0 +1,86 @@
+<div class="container justify-content-md-center">
+    <div class="row justify-content-md-center container">
+        <div class="row">
+            <div class="col">
+                <h1>Konnektivität</h1>
+                <form class="container">
+                    <div class="row">
+                        <div class="col"><label for="input_hostname">Hostname</label></div>
+                        <div class="col"><input id="input_hostname" type="text" value="10.0.0.1"></div>
+                    </div>
+                    <div class="row">
+                        <div class="col"><label for="input_port">Port</label></div>
+                        <div class="col"><input id="input_port" type="text" value="8000"></div>
+                    </div>
+                    <div class="row">
+                        <input type="button" onclick="read_form_values()" value="Sichern">
+                    </div>
+                </form>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col">
+                <h1>Auftrag</h1>
+                <form class="container" id="auftrag" method="POST" action="/page_form">
+                    <div class="row">
+                        <div class="col"><label for="input_runde1">Runde 1</label></div>
+                        <div class="col"><input name="input_runde1" id="input_runde1" type="number"></div>
+                    </div>
+                    <div class="row">
+                        <div class="col"><label for="input_runde2">Runde 2</label></div>
+                        <div class="col"><input name="input_runde2" id="input_runde2" type="number"></div>
+                    </div>
+                    <div class="row">
+                        <div class="col"><label for="input_runde3">Runde 3</label></div>
+                        <div class="col"><input name="input_runde3" id="input_runde3" type="number"></div>
+                    </div>
+                    <input type="submit" value="Auftrag aufgeben">
+                    <input type="hidden" typeof="text" name="type" value="Auftrag">
+                </form>
+            </div>
+        </div>
+    </div>
+    <!-- Left side -->
+    <div class="row justify-content-md-center">
+        <div class="col-sm">
+            <img width="60%" id="livestream" src="" alt=""/>
+        </div>
+    </div>
+</div>
+
+<script type="text/javascript">
+    var url = "";
+
+    document.getElementById("auftrag").onsubmit = function submit_form(e) {
+        console.log("p");
+        const no_url = url === "";
+        if (no_url) {
+            alert("Hostname und Port muss gesetzt werden!")
+            e.preventDefault()
+        }
+        clear_stream_fill_in_hostname();
+    }
+
+
+    function clear_stream_fill_in_hostname() {
+        const form = document.getElementById("auftrag")
+        var hostname_input = document.createElement("input");
+        hostname_input.setAttribute("type", "text");
+        hostname_input.setAttribute("name", "input_hostname");
+        hostname_input.setAttribute("value", url);
+        document.getElementsByTagName("img")[0].setAttribute("src", "");
+
+        form.appendChild(hostname_input);
+    }
+
+    function read_form_values() {
+        const hostname = document.getElementById("input_hostname").value;
+        const server_port = ":" + document.getElementById("input_port").value;
+        const stream_port = ":" + "8080";
+        const protocol = "http://";
+        const stream_path = "/stream/video.mjpeg"
+        document.getElementById("livestream")
+            .setAttribute("src", protocol + hostname + stream_port + stream_path)
+        url = protocol + hostname + server_port;
+    }
+</script>

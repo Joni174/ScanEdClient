@@ -1,0 +1,107 @@
+<div class="container">
+    <div style="align-content: center" class="row">
+        <div class="col">
+            <h1>Status</h1>
+            <p id="status"></p>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col">
+            <h1>Letzte Aufnahme</h1>
+            <div style="max-height: 400px; overflow: auto" id="aufnahmen"></div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col">
+            <form method="post" action="/page_form">
+                <input type="hidden" name="type" value="None">
+                <input type="submit" value="Start Photogrammetry">
+            </form>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col">
+            <button onclick="reset()">Reset</button>
+        </div>
+    </div>
+</div>
+
+<style type="text/css">
+    img {
+        width: 200px;
+    }
+</style>
+
+<script type="text/javascript">
+    var socket = new WebSocket("ws://localhost:8080/ws_notification");
+    var downloaded_images = [];
+
+    download_new_images()
+    get_and_set_status()
+
+    socket.onmessage = function (msg) {
+        console.log(msg.data);
+        download_new_images()
+        get_and_set_status()
+    }
+
+    function reset() {
+        fetch("/", {
+            method: "delete"
+        }).then(res => alert(res.status)).then(_ => location.reload())
+    }
+
+    function get_and_set_status() {
+        fetch("/status")
+            .then(response => response.json())
+            .then(function f(status) {
+                console.log("status: ")
+                console.log(status)
+                var display_status;
+                if (status.type === "Finished") {
+                    display_status = "Alle Aufnahmen wurden heruntergeladen."
+                } else if (status.type === "TakingImages") {
+                    display_status = "Status: " + "Runde: " + status.runde + ", Aufnahme: " + status.aufnahme;
+                } else if (status.type === "Start") {
+                    display_status = "Starting"
+                } else {
+                    display_status = "invalid type"
+                }
+                document.getElementById("status").innerHTML = display_status
+            });
+    }
+
+    async function get_image_list() {
+        return await fetch("/media_content")
+            .then(response => response.json())
+    }
+
+    async function download_new_images() {
+        const all_images = await get_image_list()
+        const new_images = arr_diff(all_images, downloaded_images);
+        for (const image_name of new_images) {
+            downloaded_images.push(image_name)
+            const img = document.createElement("img");
+            img.setAttribute("src", image_name);
+            document.getElementById("aufnahmen").appendChild(img)
+        }
+    }
+
+    function arr_diff(a1, a2) {
+        var a = [], diff = [];
+        for (var i = 0; i < a1.length; i++) {
+            a[a1[i]] = true;
+        }
+        for (var i = 0; i < a2.length; i++) {
+            if (a[a2[i]]) {
+                delete a[a2[i]];
+            } else {
+                a[a2[i]] = true;
+            }
+        }
+        for (var k in a) {
+            diff.push(k);
+        }
+        return diff;
+    }
+</script>

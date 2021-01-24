@@ -1,0 +1,5 @@
+###
+POST http://localhost:8080/page_form
+Content-Type: application/x-www-form-urlencoded
+
+type=Auftrag&input_runde1=3&input_runde1=3&input_runde1=3&input_hostname=http://localhost:8000

@@ -1,5 +1,5 @@
 [package]
-name = "scan3d_client"
+name = "scaned_client"
 version = "0.1.0"
 authors = ["jonas <jonas.gastecker@sz-ybbs.ac.at>"]
 edition = "2018"
@@ -7,10 +7,22 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tokio = { version = "0.2", features = ["full"] }
-reqwest = { version = "0.10.9", features = ["json"]}
+tokio = { version = "0.2.24", features = ["full"] }
+reqwest = { version = "0.10.10", features = ["json"]}
 serde = {version= "1.0.117", features=["derive"]}
 clap = "2"
 log = "0.4.11"
-simple_logger = "1.11.0"
 # ansi_term = "0.12.1"
+actix-web = "3.3.2"
+serde_json = "1.0.60"
+actix-files = "0.4.1"
+tinytemplate = "1.1.0"
+actix = "0.10.0"
+actix-web-actors = "3.0.0"
+crossbeam-channel = "0.5.0"
+async-trait = "0.1.42"
+env_logger = "0.8.2"
+zip = "0.5.9"
+zip-extensions = "0.6.0"
+walkdir = "2.3.1"
+futures = "0.3.0"
