@@ -128,10 +128,11 @@ impl ImageDownloader {
 
     async fn download_images(&self) -> Result<(), Box<dyn Error + Send>> {
         let new_images = self.get_new_image_paths().await?;
+        let mut task_handles = Vec::new();
         for image_path in new_images {
             let url = self.url.clone();
             let image_store = Arc::clone(&self.image_store);
-            tokio::spawn(async move {
+            let t = tokio::spawn(async move {
                 //downlaod aufnahme from server
                 let image = match server_com::get_aufnahme(&url, &image_path).await {
                     Ok(image) => image,
@@ -141,12 +142,16 @@ impl ImageDownloader {
                     },
                 };
 
-
                 // save aufname locally
                 if let Err(err) = image_store.store_image(&image_path, &image).await {
                     error!("Error downloading image: {}", err);
                 };
             });
+            task_handles.push(t);
+        }
+
+        for task_handle in task_handles {
+            task_handle.await.expect("unable to wait for image_downloading task");
         }
         Ok(())
     }
