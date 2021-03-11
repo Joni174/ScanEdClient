@@ -133,10 +133,12 @@ impl ImagePhase {
     async fn new(url: String, rounds: Vec<i32>) -> Result<ImagePhase, Box<dyn Error + Send>> {
         server_com::post_auftrag(com_model::Auftrag::from_vec(rounds.clone()), &url).await?;
         let new_status_notifier = Arc::new(Mutex::new(None));
+        println!("new image donwloader");
         let image_downloader = Arc::new(ImageDownloader::new(
             url.clone(),
             com_model::Auftrag::from_vec(rounds.clone()).into_target_status(),
             Arc::clone(&new_status_notifier)).await?);
+        println!("did not faile");
         Arc::clone(&image_downloader).start().await;
         Ok(ImagePhase {
             new_status_notifier,

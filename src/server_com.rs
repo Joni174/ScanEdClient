@@ -36,7 +36,8 @@ pub mod com_model {
 }
 
 pub async fn get_status(url: &str) -> reqwest::Result<ServerStatus> {
-    reqwest::get(str_to_url(&url).join(AUFTRAG_ENPOINT).unwrap()).await?
+    reqwest::get(str_to_url(&url).join(AUFTRAG_ENPOINT).unwrap())
+        .await?
         .json::<ServerStatus>().await
 }
 
@@ -46,8 +47,7 @@ fn str_to_url(str: &str) -> Url {
 
 pub async fn post_auftrag(auftrag: Auftrag, url: &str) -> Result<Response, Box<dyn Error + Send>> {
     info!("post auftrag: {:?}", auftrag);
-    let client = reqwest::Client::new();
-    client.post(str_to_url(url)
+    reqwest::Client::new().post(str_to_url(url)
         .join(AUFTRAG_ENPOINT).map_err(|err| -> Box<dyn Error + Send> { Box::new(err) })?)
         .json(&auftrag)
         .send()
@@ -57,9 +57,9 @@ pub async fn post_auftrag(auftrag: Auftrag, url: &str) -> Result<Response, Box<d
 
 pub(crate) async fn get_ready_image_list(url: &str) -> reqwest::Result<HashSet<String>> {
     info!("requesting image index from server");
-    Ok(reqwest::get(
-        str_to_url(url).join(AUFNAHMEN_ENDPOINT).unwrap()
-    ).await?.json::<HashSet<String>>().await.unwrap())
+    Ok(reqwest::get(str_to_url(url).join(AUFNAHMEN_ENDPOINT).unwrap())
+        .await?
+        .json::<HashSet<String>>().await.unwrap())
 }
 
 pub(crate) async fn get_aufnahme(url: &str, img_path: &String) -> reqwest::Result<Vec<u8>> {

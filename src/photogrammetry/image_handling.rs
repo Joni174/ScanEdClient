@@ -157,7 +157,7 @@ impl ImageDownloader {
     }
 
     async fn get_new_status(&self) -> Result<Option<ImageAppStatus>, Box<dyn Error + Send>> {
-        let server_status = server_com::get_status(&self.url).await
+        let server_status = server_com::get_status(&self.url.clone()).await
             .map_err(|err| -> Box<dyn Error + Send> { Box::new(err) })?;
         let new_server_status = if server_status.eq(&self.target_server_status) {
             ImageAppStatus::Finished
